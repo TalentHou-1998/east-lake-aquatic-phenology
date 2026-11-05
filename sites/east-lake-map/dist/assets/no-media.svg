@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900">
+  <rect width="1200" height="900" fill="#071011"/>
+  <path d="M380 570 510 420l92 104 74-78 144 160H380z" fill="#183131" stroke="#42e8c5" stroke-width="8"/>
+  <circle cx="730" cy="325" r="54" fill="#ffbb55" opacity=".8"/>
+  <text x="600" y="700" fill="#90a8a3" font-size="42" font-family="sans-serif" text-anchor="middle">未获得页面静态图片，请打开平台来源查看视频</text>
+</svg>

@@ -1,0 +1,58 @@
+# Secrets and local identity
+.env
+.env.*
+!.env.example
+*.token
+*.secret
+*.pem
+*.key
+*.p12
+*.pfx
+credentials*.json
+
+# Browser sessions and local authentication
+data/edge-profile/
+**/browser-profile/
+**/user-data-dir/
+
+# Research data and third-party media (not redistributable)
+data/raw/
+data/interim/
+data/processed/
+data/annotations/
+media/
+output/
+reports/contact_sheets/
+
+# Vendored crawlers retain their own repositories and licenses
+/vendor/
+
+# Generated/private Site state
+sites/east-lake-map/.git/
+sites/east-lake-map/.openai/
+sites/east-lake-map/dist/assets/media/
+sites/east-lake-map/dist/data/points.json
+sites/east-lake-map/dist/data/summary.json
+sites/east-lake-map/.playwright-cli/
+
+# Python / Node / editor artifacts
+.venv*/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+node_modules/
+.DS_Store
+.idea/
+.vscode/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.part
+*.sqlite
+*.sqlite3
+dist-release/
+release-staging/
+

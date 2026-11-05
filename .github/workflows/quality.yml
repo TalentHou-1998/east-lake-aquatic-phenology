@@ -1,0 +1,24 @@
+name: quality
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile Python sources
+        run: python -m compileall -q src
+      - name: Check browser JavaScript
+        run: node --check sites/east-lake-map/dist/app.js
+      - name: Enforce public-release boundary
+        run: python src/check_public_release.py --root .
+

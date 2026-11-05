@@ -1,0 +1,14 @@
+[project]
+name = "east-lake-aquatic-phenology"
+version = "0.5.0"
+description = "Multiplatform media processing and map-assisted aquatic vegetation phenology review"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+

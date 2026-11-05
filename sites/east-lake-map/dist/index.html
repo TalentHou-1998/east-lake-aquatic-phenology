@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="武汉东湖社交媒体影像与平台定位一致性核验地图">
+  <title>武汉东湖媒体影像核验地图</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230d5060'/%3E%3Ctext x='32' y='42' text-anchor='middle' font-family='Arial' font-size='28' font-weight='700' fill='white'%3EEL%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="vendor/leaflet.css">
+  <link rel="stylesheet" href="vendor/MarkerCluster.css">
+  <link rel="stylesheet" href="vendor/MarkerCluster.Default.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand-block">
+      <div class="brand-mark">EL</div>
+      <div>
+        <p class="eyebrow">EAST LAKE · MEDIA TRACE</p>
+        <h1>武汉东湖媒体影像核验地图</h1>
+      </div>
+    </div>
+    <div class="header-metrics" aria-label="数据摘要">
+      <div><strong id="totalMetric">—</strong><span>媒体记录</span></div>
+      <div><strong id="observedMetric">—</strong><span>平台原始坐标</span></div>
+      <div><strong id="screenedMetric">—</strong><span>植被预标注</span></div>
+      <div><strong id="hiddenMetric">0</strong><span>已隐藏无意义</span></div>
+    </div>
+    <button class="export-button" id="exportButton" type="button">导出人工判断</button>
+  </header>
+
+  <main class="workspace">
+    <aside class="sidebar" aria-label="地图筛选器">
+      <section class="intro-card">
+        <div class="status-dot"></div>
+        <div>
+          <p>百度遥感影像底图</p>
+          <span>点位仅用于核验，不代表拍摄真值</span>
+        </div>
+      </section>
+
+      <label class="search-box">
+        <span>检索</span>
+        <input id="searchInput" type="search" placeholder="地点、文案、植被类型…">
+      </label>
+
+      <section class="filter-section">
+        <div class="section-heading"><h2>平台</h2><button id="resetFilters" type="button">重置</button></div>
+        <div class="platform-pills" id="platformFilters"></div>
+      </section>
+
+      <section class="filter-section">
+        <h2>发布时间</h2>
+        <div class="year-grid">
+          <label>从<select id="yearStart"></select></label>
+          <label>至<select id="yearEnd"></select></label>
+        </div>
+        <label class="toggle-row compact"><input id="includeUnknownTime" type="checkbox" checked><span>包含平台未提供时间的相册</span></label>
+      </section>
+
+      <section class="filter-section">
+        <h2>位置精度</h2>
+        <label class="toggle-row"><input id="observedOnly" type="checkbox"><span>仅显示平台原始坐标</span></label>
+        <div class="legend-row"><i class="legend-marker observed"></i><span>平台返回坐标（坐标系按 GCJ-02 假设转换）</span></div>
+        <div class="legend-row"><i class="legend-marker estimated"></i><span>地点/区域估计坐标</span></div>
+      </section>
+
+      <section class="filter-section">
+        <h2>视觉判断</h2>
+        <label class="select-row">植被阶段<select id="stageFilter">
+          <option value="all">全部</option>
+          <option value="growth_start">植被开始生长</option>
+          <option value="fully_grown">植被生长完全</option>
+          <option value="decline_start">植被开始衰败</option>
+          <option value="declined">植被已经衰败</option>
+          <option value="unknown">尚未判断</option>
+        </select></label>
+        <label class="select-row">一致性<select id="matchFilter">
+          <option value="all">全部</option><option value="match">一致</option>
+          <option value="plausible">大致一致</option><option value="conflict">冲突</option>
+          <option value="unknown">尚未判断</option>
+        </select></label>
+        <label class="toggle-row compact"><input id="showMeaningless" type="checkbox"><span>显示已标为“无意义”的点位</span></label>
+      </section>
+
+      <section class="result-section">
+        <div class="section-heading"><h2>当前结果</h2><span id="visibleCount">—</span></div>
+        <div class="result-list" id="resultList"></div>
+      </section>
+    </aside>
+
+    <section class="map-shell">
+      <div id="map" aria-label="武汉东湖遥感影像地图"></div>
+      <div class="map-note">
+        <strong>核验提示</strong>
+        <span>同一平台 POI 可能对应多个拍摄点。请结合岸线、桥梁、建筑和植被斑块判断。</span>
+      </div>
+      <div class="loading-panel" id="loadingPanel"><div class="loader"></div><span>正在载入影像与点位…</span></div>
+    </section>
+
+    <aside class="detail-panel" id="detailPanel" aria-hidden="true">
+      <button class="close-detail" id="closeDetail" type="button" aria-label="关闭详情">×</button>
+      <div class="detail-scroll">
+        <div class="detail-meta-line">
+          <span class="platform-badge" id="detailPlatform"></span>
+          <span id="detailDate"></span>
+          <span class="precision-badge" id="detailPrecision"></span>
+        </div>
+        <h2 id="detailTitle"></h2>
+        <p class="detail-address" id="detailAddress"></p>
+
+        <div class="media-viewer">
+          <img id="detailImage" alt="关联媒体图像">
+          <button class="media-nav prev" id="mediaPrev" type="button" aria-label="上一张">‹</button>
+          <button class="media-nav next" id="mediaNext" type="button" aria-label="下一张">›</button>
+          <span class="media-counter" id="mediaCounter"></span>
+        </div>
+        <div class="thumbnail-strip" id="thumbnailStrip"></div>
+
+        <section class="comparison-grid">
+          <article>
+            <span>平台定位</span>
+            <strong id="platformLocation"></strong>
+            <p id="platformAddress"></p>
+          </article>
+          <article>
+            <span>目视位置</span>
+            <strong id="visualLocation"></strong>
+            <p id="visualConfidence"></p>
+          </article>
+        </section>
+
+        <section class="annotation-card">
+          <div><span>植被</span><strong id="vegetationType"></strong></div>
+          <div><span>阶段</span><strong id="growthStage"></strong></div>
+          <div><span>覆盖度</span><strong id="coverGrade"></strong></div>
+          <div><span>预标注一致性</span><strong id="preMatch"></strong></div>
+        </section>
+
+        <section class="text-card">
+          <h3>发布文案 / 评价</h3>
+          <p id="detailText"></p>
+        </section>
+
+        <section class="review-card">
+          <h3>我的位置一致性判断</h3>
+          <div class="review-options" id="reviewOptions">
+            <button data-value="match" type="button">一致</button>
+            <button data-value="plausible" type="button">大致一致</button>
+            <button data-value="conflict" type="button">冲突</button>
+            <button data-value="unknown" type="button">无法判断</button>
+          </div>
+          <h3 class="review-subtitle">植被阶段判断</h3>
+          <select id="reviewStage">
+            <option value="unknown">尚未判断</option>
+            <option value="growth_start">植被开始生长</option>
+            <option value="fully_grown">植被生长完全</option>
+            <option value="decline_start">植被开始衰败</option>
+            <option value="declined">植被已经衰败</option>
+          </select>
+          <h3 class="review-subtitle">媒体帖子价值</h3>
+          <div class="review-options value-options" id="valueOptions">
+            <button data-value="meaningful" type="button">有意义</button>
+            <button data-value="unknown" type="button">待判断</button>
+            <button data-value="meaningless" type="button">无意义并隐藏</button>
+          </div>
+          <textarea id="reviewNote" rows="3" placeholder="记录可辨认的桥梁、岸线、建筑或冲突证据…"></textarea>
+          <button class="save-review" id="saveReview" type="button">保存本地判断</button>
+          <p class="save-hint" id="saveHint">判断仅保存在此浏览器，可随时导出 CSV。</p>
+        </section>
+
+        <div class="detail-actions">
+          <a id="sourceLink" target="_blank" rel="noreferrer">打开平台来源</a>
+          <a id="baiduLink" target="_blank" rel="noreferrer">在百度地图核对</a>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <div class="lightbox" id="lightbox" aria-hidden="true">
+    <button id="closeLightbox" type="button" aria-label="关闭大图">×</button>
+    <img id="lightboxImage" alt="媒体大图">
+  </div>
+
+  <script src="vendor/leaflet.js"></script>
+  <script src="leaflet.ChineseCRS.js"></script>
+  <script src="vendor/leaflet.markercluster.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
