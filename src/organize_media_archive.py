@@ -64,6 +64,40 @@ def read_records(run_root: Path, platform: str) -> list[dict]:
     return records
 
 
+def location_match_state(record: dict, unit: dict, all_units: list[dict]) -> str:
+    """Return match/ambiguous/none using the strongest explicit POI alias."""
+    text = " ".join(
+        str(record.get(field, ""))
+        for field in ("title", "desc", "content", "note_title", "note_desc")
+    )
+    scores: dict[str, int] = {}
+    for candidate in all_units:
+        aliases = [alias for alias in candidate.get("aliases", []) if len(alias) >= 4]
+        scores[candidate["unit_id"]] = max(
+            (len(alias) for alias in aliases if alias in text),
+            default=0,
+        )
+    current = scores.get(unit["unit_id"], 0)
+    if current == 0:
+        return "none"
+    if any(score >= current for unit_id, score in scores.items() if unit_id != unit["unit_id"]):
+        return "ambiguous"
+    return "match"
+
+
+def aquatic_relevant(record: dict) -> bool:
+    text = " ".join(
+        str(record.get(field, ""))
+        for field in ("title", "desc", "content", "note_title", "note_desc")
+    )
+    terms = (
+        "荷花", "荷叶", "荷塘", "荷园", "残荷", "莲花", "并蒂莲", "睡莲",
+        "水草", "浮萍", "水葫芦", "芦苇", "菖蒲", "香蒲", "菱角", "水生植物",
+        "湿地", "水道", "池塘", "湖湾", "浅滩", "返青", "盛花", "枯黄", "打捞",
+    )
+    return any(term in text for term in terms)
+
+
 def place_file(source: Path, target: Path, mode: str) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists():
@@ -95,6 +129,16 @@ def main() -> None:
     parser.add_argument("--mode", choices=("hardlink", "copy"), default="hardlink")
     parser.add_argument("--start", default="2018-01-01")
     parser.add_argument("--end", default="2026-10-30")
+    parser.add_argument(
+        "--allow-unanchored",
+        action="store_true",
+        help="Archive records without a Wuhan/POI anchor; disabled by default.",
+    )
+    parser.add_argument(
+        "--allow-nonaquatic",
+        action="store_true",
+        help="Archive records without aquatic vegetation semantics; disabled by default.",
+    )
     args = parser.parse_args()
 
     plan = json.loads(args.plan.read_text(encoding="utf-8"))
@@ -123,11 +167,25 @@ def main() -> None:
     added: list[dict[str, str]] = []
     skipped_text_only = 0
     skipped_out_of_period = 0
+    skipped_geography = 0
+    skipped_ambiguous_geography = 0
+    skipped_nonaquatic = 0
     for record in records:
         content_id = str(record.get(spec["id"], ""))
         publish_time = parse_time(record.get(spec["time"]))
         if publish_time and not (args.start <= publish_time[:10] <= args.end):
             skipped_out_of_period += 1
+            continue
+        if not args.allow_unanchored:
+            location_state = location_match_state(record, unit, plan["jobs"])
+            if location_state == "none":
+                skipped_geography += 1
+                continue
+            if location_state == "ambiguous":
+                skipped_ambiguous_geography += 1
+                continue
+        if not args.allow_nonaquatic and not aquatic_relevant(record):
+            skipped_nonaquatic += 1
             continue
         media_dir = args.run_root / spec["media_dir"] / "media" / safe_component(content_id)
         files = sorted(
@@ -175,6 +233,9 @@ def main() -> None:
     print(
         f"records={len(records)} media_added={len(added)} text_only_skipped={skipped_text_only} "
         f"out_of_period_skipped={skipped_out_of_period} "
+        f"geography_skipped={skipped_geography} "
+        f"ambiguous_geography_skipped={skipped_ambiguous_geography} "
+        f"nonaquatic_skipped={skipped_nonaquatic} "
         f"manifest={manifest_path}"
     )
 

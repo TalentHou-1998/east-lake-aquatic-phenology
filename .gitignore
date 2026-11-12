@@ -22,6 +22,7 @@ data/processed/
 data/annotations/
 media/
 media_collected/
+media_quarantine/
 output/
 reports/contact_sheets/
 

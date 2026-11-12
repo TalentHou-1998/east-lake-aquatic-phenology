@@ -31,17 +31,20 @@ def build_keywords(unit: dict[str, str], terms: dict, limit: int) -> list[str]:
     candidates: list[str] = []
 
     # Every POI alias gets several high-yield vegetation terms.
+    def anchored(alias: str) -> str:
+        return alias if "武汉" in alias else f"武汉 {alias}"
+
     for alias in aliases:
         for term in ("荷花", "荷叶", "残荷", "水草", "浮萍", "湿地"):
-            candidates.append(f"{alias} {term}")
+            candidates.append(f"{anchored(alias)} {term}")
 
     # The primary place name gets the richer phenology and disturbance matrix.
     for plant, phase in terms["preferred_pair_templates"]:
-        candidates.append(f"{primary} {plant} {phase}")
+        candidates.append(f"{anchored(primary)} {plant} {phase}")
     for term in terms["core_plants"]:
-        candidates.append(f"{primary} {term}")
+        candidates.append(f"{anchored(primary)} {term}")
     for term in terms["observation_context"] + terms["management_events"]:
-        candidates.append(f"{primary} {term}")
+        candidates.append(f"{anchored(primary)} {term}")
 
     return unique(candidates)[:limit]
 

@@ -51,6 +51,7 @@ flowchart LR
 | 原始层 | `data/raw/` | 保留原始 JSON/CSV，禁止就地修改 |
 | 媒体层 | `media/` | 保存图片、视频、封面和关键帧 |
 | 地点归档层 | `media_collected/` | 按区域/地点/平台组织实际媒体，以 SHA-256 去重，不保存正文和身份字段 |
+| 隔离层 | `media_quarantine/` | 保存地域误匹配或质量异常媒体，可恢复，不参与正式统计和地图展示 |
 | 处理层 | `src/build_*`、`src/process_*` | 字段清洗、下载、去重、时间解析、相关性筛选 |
 | 统一层 | `data/processed/*_posts.csv` | 统一字段和平台合并表 |
 | 标注层 | `src/apply_visual_screen.py`、`src/migrate_annotation_schema.py` | 写入预标注、迁移标签、保留来源说明 |
