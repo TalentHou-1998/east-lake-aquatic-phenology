@@ -33,7 +33,8 @@ flowchart LR
     D --> E[data/processed 统一 CSV]
     E --> F[阶段迁移与质量检查]
     F --> G[地图导出器]
-    H[media 本地证据库] --> G
+    H[media 原始证据库] --> M[区域/地点媒体归档]
+    M --> G
     G --> I[静态地图包]
     I --> J[浏览器人工核验]
     J --> K[localStorage 本地判断]
@@ -49,6 +50,7 @@ flowchart LR
 | 采集层 | `scripts/`、外部采集器 | 启动浏览器、关键词检索、保存平台原始响应 |
 | 原始层 | `data/raw/` | 保留原始 JSON/CSV，禁止就地修改 |
 | 媒体层 | `media/` | 保存图片、视频、封面和关键帧 |
+| 地点归档层 | `media_collected/` | 按区域/地点/平台组织实际媒体，以 SHA-256 去重，不保存正文和身份字段 |
 | 处理层 | `src/build_*`、`src/process_*` | 字段清洗、下载、去重、时间解析、相关性筛选 |
 | 统一层 | `data/processed/*_posts.csv` | 统一字段和平台合并表 |
 | 标注层 | `src/apply_visual_screen.py`、`src/migrate_annotation_schema.py` | 写入预标注、迁移标签、保留来源说明 |

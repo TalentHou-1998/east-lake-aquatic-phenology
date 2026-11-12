@@ -17,6 +17,7 @@ BLOCKED_PATHS = (
     "data/annotations/",
     "data/edge-profile/",
     "media/",
+    "media_collected/",
     "output/",
     "vendor/",
     "sites/east-lake-map/.openai/",

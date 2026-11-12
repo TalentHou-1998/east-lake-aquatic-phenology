@@ -103,6 +103,7 @@ data/interim/                中间状态与断点
 data/processed/              统一后的 CSV
 data/annotations/            人工预标注
 media/                       原始图片、视频和关键帧
+media_collected/             按区域/地点/平台重组的媒体素材
 src/                         清洗、迁移、导出和检查脚本
 scripts/                     采集运行脚本
 sites/east-lake-map/dist/    静态核验地图
@@ -121,7 +122,24 @@ docs/                        用户、字段、标注和设计文档
 - 不收集研究无关的账号 ID、手机号、邮箱等身份信息。
 - 原始媒体只用于内部研究，不公开再分发。
 
-### 8.2 抖音
+### 8.2 地点化媒体采集计划
+
+先生成空间单元和关键词计划：
+
+```bash
+python3 src/build_media_collection_plan.py
+```
+
+查看一个任务但不执行：
+
+```bash
+python3 scripts/run_place_media_collection.py \
+  --unit-id EL08 --platform dy --keyword-count 1 --max-notes 10
+```
+
+添加 `--execute` 后才会连接登录浏览器并采集。支持的平台参数为 `xhs/dy/ks/wb`。完整的空间单元、断点参数和停止条件见 `docs/media_collection_protocol.md`。
+
+### 8.3 抖音登录
 
 在项目根目录启动专用 Edge profile：
 
@@ -152,7 +170,7 @@ zsh scripts/run_douyin_media_all.sh
 
 这些脚本要求第三方采集器放在 `vendor/`。第三方代码不随本仓库重新分发，应按其原仓库许可证单独安装。
 
-### 8.3 高德、微博、快手和百度地点相册
+### 8.4 高德和百度地点相册
 
 浏览器采集结果应先保存为平台原始 JSON，再运行对应处理器。示例：
 
@@ -177,6 +195,14 @@ python3 src/process_baidu_albums.py \
 尖括号内容是本机文件名占位符，不应原样执行。
 
 百度相册页面没有显示单张照片时间时，处理器必须保持 `publish_time` 为空，不能根据 URL、下载时间或文件元数据猜测。
+
+### 8.5 归档既有媒体
+
+```bash
+python3 src/archive_existing_media.py --project-root .
+```
+
+媒体会按“区域/地点/平台”以硬链接重组，原文件不移动。只有宽泛“东湖”证据的素材进入“东湖—待核验地点”，等待地图人工定位。
 
 ## 9. 数据整理与标注迁移
 

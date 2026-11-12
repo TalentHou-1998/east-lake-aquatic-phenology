@@ -21,6 +21,7 @@ data/interim/
 data/processed/
 data/annotations/
 media/
+media_collected/
 output/
 reports/contact_sheets/
 
