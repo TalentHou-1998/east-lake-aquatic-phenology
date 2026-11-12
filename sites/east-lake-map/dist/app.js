@@ -15,7 +15,8 @@ const labels = {
     douyin: { short: '抖音', detail: '抖音帖子' },
     kuaishou: { short: '快手', detail: '快手帖子' },
     weibo: { short: '微博', detail: '微博帖子' },
-    baidu: { short: '百度', detail: '百度地点相册' }
+    baidu: { short: '百度', detail: '百度地点相册' },
+    xhs: { short: '小红书', detail: '小红书帖子' }
   }
 };
 

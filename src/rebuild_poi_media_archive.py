@@ -1,0 +1,232 @@
+#!/usr/bin/env python3
+"""Build a publication-time-named, POI-centric media archive.
+
+The source archive is left untouched. Files in the rebuilt archive are hard
+linked when possible (and copied as a fallback), so the operation is
+recoverable and does not duplicate file contents on the same filesystem.
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+from datetime import datetime
+import hashlib
+import os
+from pathlib import Path
+import re
+import shutil
+
+
+PLATFORM_NAMES = {
+    "amap": "高德地图",
+    "baidu": "百度地图",
+    "douyin": "抖音",
+    "dy": "抖音",
+    "kuaishou": "快手",
+    "ks": "快手",
+    "weibo": "微博",
+    "wb": "微博",
+    "xhs": "小红书",
+}
+
+PLATFORM_KEYS = {
+    "amap": "amap",
+    "baidu": "baidu",
+    "douyin": "douyin",
+    "dy": "douyin",
+    "kuaishou": "kuaishou",
+    "ks": "kuaishou",
+    "weibo": "weibo",
+    "wb": "weibo",
+    "xhs": "xhs",
+}
+
+INDEX_FIELDS = [
+    "new_archive_path",
+    "original_archive_path",
+    "sha256",
+    "platform",
+    "platform_name",
+    "region",
+    "poi",
+    "unit_id",
+    "content_id",
+    "media_index",
+    "media_type",
+    "publish_time",
+    "crawl_time",
+    "source_keyword",
+    "source_url",
+]
+
+
+def safe_name(value: str, fallback: str = "地点待核验") -> str:
+    value = (value or "").strip()
+    value = re.sub(r"[\\/:*?\"<>|\x00-\x1f]", "_", value)
+    value = re.sub(r"\s+", " ", value).strip(" .-")
+    return value[:100] or fallback
+
+
+def publish_stamp(value: str) -> str:
+    value = (value or "").strip()
+    if not value:
+        return "发布时间未知"
+    normalized = value.replace("Z", "+00:00")
+    for parser in (
+        lambda text: datetime.fromisoformat(text),
+        lambda text: datetime.strptime(text, "%Y-%m-%d %H:%M:%S"),
+        lambda text: datetime.strptime(text, "%Y-%m-%d"),
+    ):
+        try:
+            parsed = parser(normalized)
+            if len(value) <= 10:
+                return parsed.strftime("%Y%m%d")
+            return parsed.strftime("%Y%m%d-%H%M%S")
+        except ValueError:
+            continue
+    compact = re.sub(r"[^0-9]", "", value)
+    return compact[:14] or "发布时间未知"
+
+
+def normalized_extension(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix == ".bin":
+        try:
+            if path.read_bytes()[:3] == b"\xff\xd8\xff":
+                return ".jpg"
+        except OSError:
+            pass
+    return suffix or ".media"
+
+
+def read_csv(path: Path) -> list[dict[str, str]]:
+    with path.open(encoding="utf-8-sig", newline="") as handle:
+        return list(csv.DictReader(handle))
+
+
+def write_csv(path: Path, rows: list[dict[str, str]], fields: list[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def processed_lookups(path: Path) -> tuple[dict[str, dict[str, str]], dict[str, dict[str, str]]]:
+    by_id: dict[str, dict[str, str]] = {}
+    by_url: dict[str, dict[str, str]] = {}
+    if not path.exists():
+        return by_id, by_url
+    for row in read_csv(path):
+        if row.get("record_id"):
+            by_id[row["record_id"]] = row
+        if row.get("post_url"):
+            by_url[row["post_url"]] = row
+    return by_id, by_url
+
+
+def choose_poi(row: dict[str, str], processed: dict[str, str] | None) -> str:
+    candidate = (processed or {}).get("platform_poi_name", "").strip()
+    if candidate and not any(term in candidate for term in ("未提供", "正文提及", "待核验")):
+        return candidate
+    return row.get("place", "").strip() or candidate or "地点待核验"
+
+
+def hardlink_or_copy(source: Path, target: Path) -> str:
+    if target.exists():
+        if target.stat().st_size == source.stat().st_size:
+            return "existing"
+        raise FileExistsError(f"target exists with different size: {target}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.link(source, target)
+        return "hardlink"
+    except OSError:
+        shutil.copy2(source, target)
+        return "copy"
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--project-root", type=Path, default=Path.cwd())
+    parser.add_argument("--source-root", type=Path, default=Path("media_collected"))
+    parser.add_argument("--output-root", type=Path, default=Path("media_by_poi"))
+    parser.add_argument("--processed", type=Path, default=Path("data/processed/all_posts.csv"))
+    args = parser.parse_args()
+
+    project_root = args.project_root.resolve()
+    source_root = args.source_root if args.source_root.is_absolute() else project_root / args.source_root
+    output_root = args.output_root if args.output_root.is_absolute() else project_root / args.output_root
+    processed_path = args.processed if args.processed.is_absolute() else project_root / args.processed
+    output_root.mkdir(parents=True, exist_ok=True)
+
+    by_id, by_url = processed_lookups(processed_path)
+    source_rows: list[dict[str, str]] = []
+    for manifest in sorted(source_root.rglob("media_manifest.csv")):
+        source_rows.extend(read_csv(manifest))
+
+    prepared: list[dict[str, str]] = []
+    for row in source_rows:
+        source = project_root / row["archive_path"]
+        if not source.is_file():
+            raise FileNotFoundError(source)
+        processed = by_id.get(row.get("content_id", "")) or by_url.get(row.get("source_url", ""))
+        poi = safe_name(choose_poi(row, processed))
+        prepared.append(
+            {
+                **row,
+                "_source": str(source),
+                "poi": poi,
+                "platform": PLATFORM_KEYS.get(row.get("platform", ""), row.get("platform", "unknown")),
+                "platform_name": PLATFORM_NAMES.get(row.get("platform", ""), row.get("platform", "未知平台")),
+                "_stamp": publish_stamp(row.get("publish_time", "")),
+            }
+        )
+
+    prepared.sort(
+        key=lambda row: (
+            row["poi"],
+            row["publish_time"] or "9999",
+            row["platform_name"],
+            row.get("content_id", ""),
+            int(row.get("media_index") or 0),
+            row.get("sha256", ""),
+        )
+    )
+
+    counters: dict[str, int] = {}
+    index_rows: list[dict[str, str]] = []
+    methods: dict[str, int] = {"hardlink": 0, "copy": 0, "existing": 0}
+    for row in prepared:
+        poi = row["poi"]
+        counters[poi] = counters.get(poi, 0) + 1
+        sequence = counters[poi]
+        if sequence > 999:
+            raise RuntimeError(f"POI {poi!r} exceeds the requested 001-999 sequence range")
+        source = Path(row["_source"])
+        filename = f"{poi}-{row['_stamp']}-{row['platform_name']}-{sequence:03d}{normalized_extension(source)}"
+        target = output_root / poi / filename
+        methods[hardlink_or_copy(source, target)] += 1
+        new_path = target.relative_to(project_root).as_posix()
+        indexed = {field: row.get(field, "") for field in INDEX_FIELDS}
+        indexed["new_archive_path"] = new_path
+        indexed["original_archive_path"] = row.get("archive_path", "")
+        indexed["poi"] = poi
+        indexed["platform"] = row["platform"]
+        indexed["platform_name"] = row["platform_name"]
+        index_rows.append(indexed)
+
+    write_csv(output_root / "_归档索引.csv", index_rows, INDEX_FIELDS)
+    for poi in sorted(counters):
+        write_csv(output_root / poi / "媒体索引.csv", [row for row in index_rows if row["poi"] == poi], INDEX_FIELDS)
+
+    digest = hashlib.sha256((output_root / "_归档索引.csv").read_bytes()).hexdigest()
+    print(
+        f"media={len(index_rows)} poi_folders={len(counters)} hardlinks={methods['hardlink']} "
+        f"copies={methods['copy']} existing={methods['existing']} index_sha256={digest}"
+    )
+
+
+if __name__ == "__main__":
+    main()

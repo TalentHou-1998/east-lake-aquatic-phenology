@@ -11,6 +11,7 @@ import math
 import re
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 from urllib.parse import quote
 
@@ -24,6 +25,21 @@ POI_COORDS_GCJ02 = {
     "落雁景区": (114.470750, 30.561878),
     "东湖荷园": (114.407612, 30.551031),
     "东湖绿道": (114.405107, 30.576904),
+    "楚风园—梨园": (114.373166, 30.579660),
+    "筲箕湖—华侨城岸段": (114.388900, 30.607200),
+    "汤菱湖—欢乐谷岸段": (114.401000, 30.624000),
+    "白马—桃花岛": (114.419581, 30.600659),
+    "团湖—团子山岸段": (114.449000, 30.585000),
+    "落雁景区—晨雁岛": (114.430750, 30.561878),
+    "后湖—青王路岸段": (114.462000, 30.578000),
+    "磨山梅园—荷园": (114.402514, 30.544318),
+    "水生所—官桥湖岸段": (114.431000, 30.514000),
+    "听涛南段—荷花塘": (114.369919, 30.570279),
+    "马鞍山森林公园—吹笛景区": (114.472000, 30.515000),
+    "武汉植物园—鲁磨路岸段": (114.421000, 30.536000),
+    "渔光景区—湖中道": (114.390500, 30.558000),
+    "喻家山—喻家湖": (114.443000, 30.513000),
+    "东湖—待核验地点": (114.408432, 30.551802),
 }
 
 
@@ -87,6 +103,9 @@ def fallback_coordinate(row: dict[str, str]) -> tuple[float, float, str]:
 
 
 def media_sources(project_root: Path, row: dict[str, str]) -> list[Path]:
+    explicit_paths = [item.strip() for item in row.get("media_paths", "").split("|") if item.strip()]
+    if explicit_paths:
+        return [project_root / item for item in explicit_paths if (project_root / item).is_file()]
     local_path = row.get("media_local_path", "")
     if not local_path:
         return []
@@ -107,16 +126,44 @@ def compress_image(source: Path, target: Path) -> None:
             str(source),
             "-auto-orient",
             "-resize",
-            "1600x1600>",
+            "1400x1400>",
             "-strip",
             "-quality",
-            "78",
+            "70",
             str(target),
         ],
         check=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
+
+
+def video_poster(source: Path, target: Path) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists() and target.stat().st_mtime >= source.stat().st_mtime:
+        return
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temporary:
+        poster = Path(temporary.name)
+    try:
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-ss", "00:00:01", "-i", str(source),
+                "-frames:v", "1", "-vf", "scale='min(1600,iw)':-2", str(poster),
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        compress_image(poster, target)
+    finally:
+        poster.unlink(missing_ok=True)
+
+
+def export_media(source: Path, target: Path) -> None:
+    if source.suffix.lower() in {".mp4", ".mov", ".m4v", ".webm"}:
+        video_poster(source, target)
+    else:
+        compress_image(source, target)
 
 
 def main() -> None:
@@ -131,13 +178,20 @@ def main() -> None:
     output_data.mkdir(parents=True, exist_ok=True)
     output_media.mkdir(parents=True, exist_ok=True)
 
-    platform_files = sorted(path for path in data_dir.glob("*_posts.csv") if path.name != "all_posts.csv")
-    platforms = [path.name.removesuffix("_posts.csv") for path in platform_files]
-    points: list[dict] = []
-    for platform, platform_path in zip(platforms, platform_files):
+    platform_files = [data_dir / "all_posts.csv"]
+    archive_posts = data_dir / "archive_posts.csv"
+    if archive_posts.exists():
+        platform_files.append(archive_posts)
+    combined_rows: dict[str, dict[str, str]] = {}
+    for platform_path in platform_files:
         with platform_path.open(encoding="utf-8-sig", newline="") as handle:
             rows = list(csv.DictReader(handle))
         for row in rows:
+            combined_rows[row["record_id"]] = row
+
+    points: list[dict] = []
+    for row in combined_rows.values():
+            platform = row.get("platform", "unknown") or "unknown"
             if row.get("platform_lng") and row.get("platform_lat"):
                 gcj_lng = float(row["platform_lng"])
                 gcj_lat = float(row["platform_lat"])
@@ -149,7 +203,7 @@ def main() -> None:
             media: list[str] = []
             for index, source in enumerate(media_sources(args.project_root, row), start=1):
                 target = output_media / platform / row["record_id"] / f"{index:02d}.webp"
-                compress_image(source, target)
+                export_media(source, target)
                 media.append(target.relative_to(args.site_dist).as_posix())
 
             publish_time = row.get("publish_time", "").strip()
@@ -188,6 +242,7 @@ def main() -> None:
     (output_data / "points.json").write_text(
         json.dumps(points, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
     )
+    platforms = sorted({point["platform"] for point in points})
     summary = {
         "generatedAt": datetime.now().astimezone().isoformat(timespec="seconds"),
         "total": len(points),

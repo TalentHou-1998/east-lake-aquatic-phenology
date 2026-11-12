@@ -103,7 +103,8 @@ data/interim/                中间状态与断点
 data/processed/              统一后的 CSV
 data/annotations/            人工预标注
 media/                       原始图片、视频和关键帧
-media_collected/             按区域/地点/平台重组的媒体素材
+media_collected/             原始可追溯媒体归档
+media_by_poi/                按 POI 和发布时间命名的检查归档
 src/                         清洗、迁移、导出和检查脚本
 scripts/                     采集运行脚本
 sites/east-lake-map/dist/    静态核验地图
@@ -202,7 +203,14 @@ python3 src/process_baidu_albums.py \
 python3 src/archive_existing_media.py --project-root .
 ```
 
-媒体会按“区域/地点/平台”以硬链接重组，原文件不移动。只有宽泛“东湖”证据的素材进入“东湖—待核验地点”，等待地图人工定位。
+先保留 `media_collected/` 作为原始可追溯归档，再生成便于人工检查的新结构：
+
+```bash
+python3 src/rebuild_poi_media_archive.py --project-root .
+python3 src/import_poi_archive_to_posts.py --project-root .
+```
+
+`media_by_poi/` 中同一 POI 的高德、抖音、小红书、快手、微博和百度地图媒体位于同一文件夹，文件名为“POI-发布时间-发布平台-三位序号”。程序优先使用平台 POI；证据不足时保留空间单元名，不猜测更精确位置。新目录采用硬链接，原文件不移动。
 
 新采集结果进入正式目录前还会检查研究时段、当前空间单元具体 POI 和水生植被语义。误分批次使用 `src/quarantine_archive_batch.py` 移入可恢复隔离区，不直接删除原始证据。
 

@@ -23,6 +23,7 @@ data/annotations/
 media/
 media_collected/
 media_quarantine/
+media_by_poi/
 output/
 reports/contact_sheets/
 
