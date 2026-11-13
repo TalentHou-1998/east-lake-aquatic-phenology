@@ -140,6 +140,18 @@ python3 scripts/run_place_media_collection.py \
 
 添加 `--execute` 后才会连接登录浏览器并采集。MediaCrawler 路线支持 `xhs/dy/ks/wb/bili`；百度、高德、大众点评、美团、两步路和可颂使用各自导出或通用清单导入。完整平台路由见 `config/platform_sources.json`。
 
+针对 1—5 月素材不足，优先使用季节补采任务，不要求检索词必须包含荷花、水草等植物名称：
+
+```bash
+python3 scripts/run_place_media_collection.py \
+  --unit-id BP01 --platform xhs \
+  --strategy spring_backfill \
+  --keyword-start 0 --keyword-count 1 \
+  --target-months 1-5 --max-notes 10 --execute
+```
+
+可用策略包括 `spring_backfill`、`calendar_event`、`neutral_activity` 和 `seasonal_balance`。它们分别覆盖春游/清明/节气、中性活动以及四季词；归档器根据真实发布时间筛选目标月份，之后再通过 OCR 和人工画面核验水体与植被。完整规则见 `docs/seasonal_backfill_strategy.md`。
+
 ### 8.3 抖音登录
 
 在项目根目录启动专用 Edge profile：

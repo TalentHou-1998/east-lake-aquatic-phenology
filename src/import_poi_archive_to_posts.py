@@ -70,7 +70,9 @@ def main() -> None:
                 "media_type": "mixed" if len(types) > 1 else (next(iter(types)) if types else "media"),
                 "media_local_path": paths[0],
                 "media_sha256": first.get("sha256", ""),
-                "platform_poi_name": (matched or {}).get("platform_poi_name", "") or poi,
+                # Archive folders are a research classification, not a platform geotag.
+                # Keep this blank unless the source record actually supplied a POI.
+                "platform_poi_name": (matched or {}).get("platform_poi_name", ""),
                 "coordinate_system": (matched or {}).get("coordinate_system", "") or "unknown",
                 "visual_location_confidence": (matched or {}).get("visual_location_confidence", "") or "unknown",
                 "location_match_class": (matched or {}).get("location_match_class", "") or "unknown",

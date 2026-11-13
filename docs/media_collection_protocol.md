@@ -40,13 +40,18 @@
 
 ## 4. 关键词矩阵
 
-`config/aquatic_media_terms.json` 将词汇分为五类：
+`config/aquatic_media_terms.json` 将词汇分为八类：
 
 1. 植物：荷花、荷叶、残荷、睡莲、水草、浮萍、水葫芦、芦苇、菖蒲、香蒲等；
 2. 物候：返青、萌芽、展叶、初花、盛花、末花、枯黄、衰败、越冬等；
 3. 空间：池塘、湖湾、浅滩、岸边、湿地、水道、栈道等；
 4. 观察活动：航拍、延时、骑行、划船、游船、钓鱼等；
 5. 管理事件：打捞、清理、收割、泛滥、爆发、覆盖水面等。
+6. 春季补采：早春、春节、元宵、春游、踏青、清明、春分、谷雨、三月、四月、五月、新绿、雨后等；
+7. 中性活动：周末、散步、骑行、观鸟、露营、遛娃、晨跑、游园、CityWalk、Vlog、航拍等；
+8. 四季平衡：春、夏、秋、冬及季节景色，用发布时间月份分池，不从季节词反推拍摄日期。
+
+关键词生成顺序为“地点原名 → 春季补采 → 四季平衡 → 节气/节假日 → 中性活动 → 场景/物候”。这可避免荷花、残荷等高相关词把结果过度推向 6 月以后。季节补采批次允许文案不含水生植被词，先保留公开图片/视频，再通过 OCR、画面和人工核验判定研究价值。
 
 计划同时生成一级地标检索和“武汉/东湖 + 场景词”的无定位召回检索，例如：
 
@@ -88,6 +93,22 @@ python3 scripts/run_place_media_collection.py \
 ```
 
 不同批次使用 `--keyword-start` 续跑。平台搜索接口可能按整页返回，所以 `--max-notes` 是上限目标，不保证小于页面最小批量。
+
+按月份补采示例：
+
+```bash
+python3 scripts/run_place_media_collection.py \
+  --unit-id BP01 \
+  --platform xhs \
+  --strategy spring_backfill \
+  --keyword-start 0 \
+  --keyword-count 1 \
+  --target-months 1-5 \
+  --max-notes 10 \
+  --execute
+```
+
+`spring_backfill`、`calendar_event`、`neutral_activity` 和 `seasonal_balance` 会自动启用“媒体后筛”，并将目标月份传给归档器。发布时间未知或不在目标月份的内容不计入该补采批次。
 
 ## 6. 归档结构和命名
 

@@ -21,6 +21,9 @@ def main() -> None:
     parser.add_argument("--plan", type=Path, default=Path("data/interim/media_collection_plan.json"))
     parser.add_argument("--keyword-start", type=int, default=0)
     parser.add_argument("--keyword-count", type=int, default=1)
+    parser.add_argument("--strategy", default="", help="Select query_records by strategy before slicing.")
+    parser.add_argument("--target-months", default="", help="Only archive posts in these publish months, e.g. 1-5 or 1,3,4.")
+    parser.add_argument("--allow-nonaquatic", action="store_true", help="Keep place-anchored media even when the caption has no aquatic term.")
     parser.add_argument("--max-notes", type=int, default=10)
     parser.add_argument("--login-type", choices=("qrcode", "phone", "cookie"), default="qrcode")
     parser.add_argument("--execute", action="store_true", help="Without this flag, only print the job.")
@@ -32,7 +35,11 @@ def main() -> None:
     unit = next((job for job in payload["jobs"] if job["unit_id"] == args.unit_id), None)
     if unit is None:
         raise SystemExit(f"unknown unit_id: {args.unit_id}")
-    keywords = unit["keywords"][args.keyword_start : args.keyword_start + args.keyword_count]
+    query_records = unit.get("query_records") or [{"query": value, "strategy": ""} for value in unit["keywords"]]
+    if args.strategy:
+        query_records = [item for item in query_records if item.get("strategy") == args.strategy]
+    selected_records = query_records[args.keyword_start : args.keyword_start + args.keyword_count]
+    keywords = [item["query"] for item in selected_records]
     if not keywords:
         raise SystemExit("selected keyword slice is empty")
 
@@ -50,6 +57,8 @@ def main() -> None:
         "unit_id": args.unit_id,
         "place": unit["place"],
         "platform": args.platform,
+        "strategy": args.strategy or "all",
+        "target_months": args.target_months,
         "keywords": keywords,
         "run_root": str(run_root),
         "execute": args.execute,
@@ -73,6 +82,11 @@ def main() -> None:
             ]
         if args.unit_id == "REGION01":
             organize_command.append("--allow-unanchored")
+        broad_recall = args.strategy in {"spring_backfill", "calendar_event", "neutral_activity", "seasonal_balance"}
+        if args.allow_nonaquatic or broad_recall:
+            organize_command.append("--allow-nonaquatic")
+        if args.target_months:
+            organize_command.extend(["--months", args.target_months])
         subprocess.run(
             organize_command,
             cwd=project_root,

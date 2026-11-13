@@ -24,24 +24,39 @@ def unique(values: list[str]) -> list[str]:
 
 def build_query_records(poi: dict[str, str], terms: dict, limit: int) -> list[dict[str, str]]:
     anchors = [item.strip() for item in poi["search_anchors"].split("|") if item.strip()]
-    candidates: list[tuple[str, str]] = []
+    candidates: list[tuple[str, str, str]] = []
 
-    candidates.extend((anchor, "place_name") for anchor in anchors)
-    for term in terms["loose_search_terms"]:
-        for anchor in anchors:
-            candidates.append((f"{anchor} {term}", "place_plus_context"))
+    candidates.extend((anchor, "place_name", "") for anchor in anchors)
 
     primary = anchors[0]
+    for term in terms.get("spring_backfill_terms", []):
+        candidates.append((f"{primary} {term}", "spring_backfill", "1-5"))
+    # A small set of high-value spring terms is also paired with secondary aliases.
+    for anchor in anchors[1:]:
+        for term in ("春天", "春游", "踏青", "清明", "周末", "三月", "四月", "五月"):
+            candidates.append((f"{anchor} {term}", "spring_backfill", "1-5"))
+
+    for item in terms.get("seasonal_balance_terms", []):
+        candidates.append((f"{primary} {item['term']}", "seasonal_balance", item["target_months"]))
+    for item in terms.get("calendar_event_terms", []):
+        candidates.append((f"{primary} {item['term']}", "calendar_event", item["target_months"]))
+    for term in terms.get("neutral_activity_terms", []):
+        candidates.append((f"{primary} {term}", "neutral_activity", ""))
+
+    for term in terms["loose_search_terms"]:
+        for anchor in anchors:
+            candidates.append((f"{anchor} {term}", "place_plus_context", ""))
+
     for plant, phase in terms["preferred_pair_templates"]:
-        candidates.append((f"{primary} {plant} {phase}", "place_plus_phenology"))
+        candidates.append((f"{primary} {plant} {phase}", "place_plus_phenology", ""))
 
     seen: set[str] = set()
     records: list[dict[str, str]] = []
-    for query, strategy in candidates:
+    for query, strategy, target_months in candidates:
         query = " ".join(query.split())
         if query and query not in seen:
             seen.add(query)
-            records.append({"query": query, "strategy": strategy})
+            records.append({"query": query, "strategy": strategy, "target_months": target_months})
     return records[:limit]
 
 
@@ -59,7 +74,14 @@ def regional_job(terms: dict, platforms: list[str], routes: dict[str, str]) -> d
         "image_refs": [],
         "scope_note": "召回正文、字幕或画面文字指向研究区，但平台没有挂载定位的内容",
         "keywords": queries,
-        "query_records": [{"query": query, "strategy": "regional_content_recall"} for query in queries],
+        "query_records": [
+            {
+                "query": query,
+                "strategy": "spring_backfill" if any(term in query for term in terms.get("spring_backfill_terms", [])) else "regional_content_recall",
+                "target_months": "1-5" if any(term in query for term in terms.get("spring_backfill_terms", [])) else "",
+            }
+            for query in queries
+        ],
         "platforms": platforms,
         "collector_routes": routes,
         "requires_platform_geotag": False,
@@ -73,7 +95,7 @@ def main() -> None:
     parser.add_argument("--terms", type=Path, default=Path("config/aquatic_media_terms.json"))
     parser.add_argument("--platforms", type=Path, default=Path("config/platform_sources.json"))
     parser.add_argument("--output", type=Path, default=Path("data/interim/media_collection_plan.json"))
-    parser.add_argument("--max-keywords-per-unit", type=int, default=48)
+    parser.add_argument("--max-keywords-per-unit", type=int, default=120)
     args = parser.parse_args()
 
     with args.units.open(encoding="utf-8-sig", newline="") as handle:
@@ -114,7 +136,7 @@ def main() -> None:
         )
 
     payload = {
-        "schema_version": "3.0",
+        "schema_version": "3.1",
         "generated_at": datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(timespec="seconds"),
         "research_period": {"start": "2018-01-01", "end": "2026-10-30"},
         "policy": {
@@ -126,6 +148,11 @@ def main() -> None:
             "comments": False,
             "max_concurrency": 1,
             "incremental_batches": True,
+            "seasonal_sampling": {
+                "priority_months": [1, 2, 3, 4, 5],
+                "minimum_target_per_month": 50,
+                "search_order": ["spring_backfill", "calendar_event", "neutral_activity", "seasonal_balance", "place_plus_context", "place_plus_phenology"],
+            },
             "stop_on_verification_or_risk_control": True,
         },
         "jobs": sorted(jobs, key=lambda item: (item["priority"], item["unit_id"])),

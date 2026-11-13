@@ -54,6 +54,22 @@ def parse_time(value) -> str:
     return datetime.fromtimestamp(number, ZoneInfo("Asia/Shanghai")).isoformat(timespec="seconds")
 
 
+def parse_months(value: str) -> set[int]:
+    months: set[int] = set()
+    for part in value.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            start, end = (int(item) for item in part.split("-", 1))
+            months.update(range(start, end + 1))
+        else:
+            months.add(int(part))
+    if any(month < 1 or month > 12 for month in months):
+        raise ValueError("months must be between 1 and 12")
+    return months
+
+
 def read_records(run_root: Path, platform: str) -> list[dict]:
     records: list[dict] = []
     store_dir = PLATFORM_SPEC[platform]["store_dir"]
@@ -130,6 +146,7 @@ def main() -> None:
     parser.add_argument("--mode", choices=("hardlink", "copy"), default="hardlink")
     parser.add_argument("--start", default="2018-01-01")
     parser.add_argument("--end", default="2026-10-30")
+    parser.add_argument("--months", default="", help="Archive only these publish months, e.g. 1-5 or 1,3,4.")
     parser.add_argument(
         "--allow-unanchored",
         action="store_true",
@@ -154,6 +171,7 @@ def main() -> None:
     )
     stamp = crawl_dt.strftime("%Y%m%dT%H%M%S")
     spec = PLATFORM_SPEC[args.platform]
+    allowed_months = parse_months(args.months) if args.months else set()
     records = read_records(args.run_root, args.platform)
     destination = args.archive_root / safe_component(unit["region"]) / safe_component(unit["place"]) / args.platform
     manifest_path = destination.parent / "media_manifest.csv"
@@ -168,6 +186,8 @@ def main() -> None:
     added: list[dict[str, str]] = []
     skipped_text_only = 0
     skipped_out_of_period = 0
+    skipped_out_of_month = 0
+    skipped_unknown_publish_time = 0
     skipped_geography = 0
     skipped_ambiguous_geography = 0
     skipped_nonaquatic = 0
@@ -177,6 +197,13 @@ def main() -> None:
         if publish_time and not (args.start <= publish_time[:10] <= args.end):
             skipped_out_of_period += 1
             continue
+        if allowed_months:
+            if not publish_time:
+                skipped_unknown_publish_time += 1
+                continue
+            if int(publish_time[5:7]) not in allowed_months:
+                skipped_out_of_month += 1
+                continue
         if not args.allow_unanchored:
             location_state = location_match_state(record, unit, plan["jobs"])
             if location_state == "none":
@@ -234,6 +261,8 @@ def main() -> None:
     print(
         f"records={len(records)} media_added={len(added)} text_only_skipped={skipped_text_only} "
         f"out_of_period_skipped={skipped_out_of_period} "
+        f"out_of_month_skipped={skipped_out_of_month} "
+        f"unknown_publish_time_skipped={skipped_unknown_publish_time} "
         f"geography_skipped={skipped_geography} "
         f"ambiguous_geography_skipped={skipped_ambiguous_geography} "
         f"nonaquatic_skipped={skipped_nonaquatic} "
