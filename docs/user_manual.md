@@ -135,10 +135,10 @@ python3 src/build_media_collection_plan.py
 
 ```bash
 python3 scripts/run_place_media_collection.py \
-  --unit-id EL08 --platform dy --keyword-count 1 --max-notes 10
+  --unit-id BP05 --platform dy --keyword-count 1 --max-notes 10
 ```
 
-添加 `--execute` 后才会连接登录浏览器并采集。支持的平台参数为 `xhs/dy/ks/wb`。完整的空间单元、断点参数和停止条件见 `docs/media_collection_protocol.md`。
+添加 `--execute` 后才会连接登录浏览器并采集。MediaCrawler 路线支持 `xhs/dy/ks/wb/bili`；百度、高德、大众点评、美团、两步路和可颂使用各自导出或通用清单导入。完整平台路由见 `config/platform_sources.json`。
 
 ### 8.3 抖音登录
 
@@ -198,6 +198,26 @@ python3 src/process_baidu_albums.py \
 百度相册页面没有显示单张照片时间时，处理器必须保持 `publish_time` 为空，不能根据 URL、下载时间或文件元数据猜测。
 
 ### 8.5 归档既有媒体
+
+无专用适配器的平台先按 `config/platform_manifest.example.json` 生成 JSON 清单，然后导入：
+
+```bash
+python3 src/ingest_search_manifest.py \
+  data/raw/<平台>/<导出清单>.json \
+  --project-root . \
+  --download-media
+```
+
+清单可以不带平台定位，但必须保留公开内容入口、发布时间（若平台可见）和媒体 URL 或本地媒体路径。导入后提取综合位置证据：
+
+```bash
+python3 src/build_location_evidence.py \
+  --project-root . \
+  --ocr vision \
+  --ocr-unresolved-only
+```
+
+该步骤使用正文、图片文字和视频抽帧文字定位候选。自动结果只用于排序和地图提示，仍需人工核验。
 
 ```bash
 python3 src/archive_existing_media.py --project-root .

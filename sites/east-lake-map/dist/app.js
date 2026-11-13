@@ -16,7 +16,13 @@ const labels = {
     kuaishou: { short: '快手', detail: '快手帖子' },
     weibo: { short: '微博', detail: '微博帖子' },
     baidu: { short: '百度', detail: '百度地点相册' },
-    xhs: { short: '小红书', detail: '小红书帖子' }
+    xhs: { short: '小红书', detail: '小红书帖子' },
+    bilibili: { short: 'B站', detail: '哔哩哔哩视频' },
+    bili: { short: 'B站', detail: '哔哩哔哩视频' },
+    dianping: { short: '点评', detail: '大众点评内容' },
+    meituan: { short: '美团', detail: '美团内容' },
+    '2bulu': { short: '两步路', detail: '两步路户外内容' },
+    kesong: { short: '可颂', detail: '可颂内容' }
   }
 };
 
@@ -96,7 +102,7 @@ function applyFilters() {
   const f = filters();
   state.filtered = state.points.filter(point => {
     const a = annotation(point);
-    const haystack = `${point.broadPoi || ''} ${point.poiName} ${point.poiAddress} ${point.text} ${point.vegetationType} ${point.visualLocation}`.toLowerCase();
+    const haystack = `${point.broadPoi || ''} ${point.poiName} ${point.poiAddress} ${point.text} ${point.ocrText || ''} ${point.vegetationType} ${point.visualLocation}`.toLowerCase();
     const timeMatches = point.year === null ? f.includeUnknownTime : point.year >= f.start && point.year <= f.end;
     return f.platforms.has(point.platform) && timeMatches &&
       (!f.observedOnly || point.coordinatePrecision === 'platform_observed_unknown_crs') &&
@@ -144,7 +150,8 @@ function openDetail(point) {
   platform.textContent = labels.platforms[point.platform]?.detail || `${point.platform} 帖子`;
   const a = annotation(point);
   setText('detailDate', point.timeKnown ? point.publishTime.slice(0, 10) : '时间未知');
-  setText('detailPrecision', point.coordinatePrecision === 'platform_observed_unknown_crs' ? '平台坐标' : '估计坐标');
+  setText('detailPrecision', point.coordinatePrecision === 'platform_observed_unknown_crs' ? '平台坐标' :
+    point.coordinatePrecision === 'evidence_estimated' ? '文案/OCR 估计' : '估计坐标');
   setText('detailTitle', point.broadPoi || point.poiName);
   setText('detailAddress', point.poiAddress);
   setText('platformLocation', point.poiName);
@@ -156,6 +163,11 @@ function openDetail(point) {
   setText('coverGrade', point.coverGrade);
   setText('preMatch', labels.matches[a.match] || a.match);
   setText('detailText', point.text);
+  setText('locationEvidenceSummary', point.locationDecisionReason || '尚未形成综合位置证据');
+  setText('locationEvidenceMeta', point.locationEvidenceSources ?
+    `来源：${point.locationEvidenceSources.split('|').join('、')} · 置信分 ${point.locationEvidenceScore || '—'}` :
+    '当前没有独立于检索词的位置证据');
+  setText('ocrText', point.ocrText || '未识别到嵌入式文字或尚未执行 OCR');
   document.getElementById('sourceLink').href = point.postUrl;
   document.getElementById('baiduLink').href = `https://api.map.baidu.com/marker?location=${point.lat},${point.lng}&title=${encodeURIComponent(point.broadPoi || point.poiName)}&content=${encodeURIComponent(point.poiAddress)}&output=html&src=east-lake-media-map`;
   renderMedia(); loadJudgment();

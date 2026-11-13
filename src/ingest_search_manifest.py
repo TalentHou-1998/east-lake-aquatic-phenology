@@ -8,6 +8,8 @@ import csv
 import hashlib
 import json
 import mimetypes
+import os
+import shutil
 import urllib.request
 from pathlib import Path
 
@@ -19,7 +21,7 @@ FIELDS = [
     "platform_lng", "platform_lat", "coordinate_system", "visual_location",
     "visual_location_confidence", "location_match_class", "vegetation_type",
     "growth_stage", "cover_grade", "phenology_confidence", "media_value", "review_status",
-    "notes",
+    "notes", "media_paths",
 ]
 
 
@@ -38,7 +40,7 @@ def write_csv(path: Path, rows: list[dict[str, str]]) -> None:
         writer.writerows(rows)
 
 
-def download(url: str, destination: Path) -> tuple[str, str]:
+def download(url: str, destination: Path) -> tuple[Path, str]:
     destination.parent.mkdir(parents=True, exist_ok=True)
     request = urllib.request.Request(
         url,
@@ -52,7 +54,18 @@ def download(url: str, destination: Path) -> tuple[str, str]:
     suffix = mimetypes.guess_extension(content_type) or destination.suffix or ".jpg"
     destination = destination.with_suffix(suffix)
     destination.write_bytes(body)
-    return destination.as_posix(), hashlib.sha256(body).hexdigest()
+    return destination, hashlib.sha256(body).hexdigest()
+
+
+def local_media(source: Path, destination: Path) -> tuple[Path, str]:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination = destination.with_suffix(source.suffix.lower() or ".media")
+    if not destination.exists():
+        try:
+            os.link(source, destination)
+        except OSError:
+            shutil.copy2(source, destination)
+    return destination, hashlib.sha256(destination.read_bytes()).hexdigest()
 
 
 def record_id(platform: str, source_id: str) -> str:
@@ -68,27 +81,53 @@ def normalize(manifest_path: Path, project_root: Path, download_media: bool) -> 
             continue
         source_id = item.get("photo_id") or item.get("post_id") or item["post_url"]
         rid = record_id(platform, source_id)
-        local_rel = ""
-        digest = ""
-        if download_media and item.get("cover_url"):
-            target = project_root / "media" / platform / rid / "cover.jpg"
-            try:
-                saved, digest = download(item["cover_url"], target)
-                local_rel = Path(saved).relative_to(project_root).as_posix()
-            except Exception as error:  # retain metadata even if a CDN expires
-                item["download_error"] = f"{type(error).__name__}: {error}"
-        explicit_east_lake = "东湖" in item.get("content_text", "")
+        saved_media: list[Path] = []
+        digests: list[str] = []
+        media_urls = item.get("media_urls") or []
+        if item.get("cover_url") and item["cover_url"] not in media_urls:
+            media_urls = [item["cover_url"], *media_urls]
+        local_paths = item.get("local_media_paths") or []
+        if download_media:
+            for index, url in enumerate(media_urls, start=1):
+                try:
+                    saved, digest = download(
+                        url,
+                        project_root / "media" / platform / rid / f"{index:03d}.media",
+                    )
+                    saved_media.append(saved)
+                    digests.append(digest)
+                except Exception as error:  # retain metadata even if a CDN expires
+                    item.setdefault("download_errors", []).append(
+                        f"{type(error).__name__}: {error}"
+                    )
+            offset = len(saved_media)
+            for index, value in enumerate(local_paths, start=1):
+                source = Path(value).expanduser()
+                if not source.is_absolute():
+                    source = manifest_path.parent / source
+                try:
+                    saved, digest = local_media(
+                        source.resolve(),
+                        project_root / "media" / platform / rid / f"{offset + index:03d}{source.suffix}",
+                    )
+                    saved_media.append(saved)
+                    digests.append(digest)
+                except Exception as error:
+                    item.setdefault("download_errors", []).append(
+                        f"{type(error).__name__}: {error}"
+                    )
+        relative_media = [path.relative_to(project_root).as_posix() for path in saved_media]
         notes = [
-            f"author={item.get('author', '')}",
             f"like_count={item.get('like_count', '')}",
             f"relevance={item.get('relevance_level', 'unknown')}",
             f"relevance_reason={item.get('relevance_reason', '')}",
             f"time_source={manifest.get('time_source', 'platform')}",
-            "time_precision=date",
-            "platform_location_absent",
+            f"time_precision={item.get('time_precision', manifest.get('time_precision', 'unknown'))}",
         ]
-        if item.get("download_error"):
-            notes.append(f"download_error={item['download_error']}")
+        if not any(item.get(field) for field in ("platform_poi_name", "platform_poi_address", "platform_lng", "platform_lat")):
+            notes.append("platform_location_absent")
+        if item.get("download_errors"):
+            notes.append(f"download_errors={len(item['download_errors'])}")
         rows.append({
             "record_id": rid,
             "platform": platform,
@@ -97,14 +136,15 @@ def normalize(manifest_path: Path, project_root: Path, download_media: bool) -> 
             "content_text": item.get("content_text", ""),
             "publish_time": item.get("publish_time", ""),
             "crawl_time": manifest.get("crawl_time", ""),
-            "media_type": "video_cover",
-            "media_local_path": local_rel,
-            "media_sha256": digest,
-            "platform_poi_name": "东湖（正文提及，未提供平台定位）" if explicit_east_lake else "",
-            "platform_poi_address": "",
-            "platform_lng": "",
-            "platform_lat": "",
-            "coordinate_system": "unknown",
+            "media_type": item.get("media_type", "unknown"),
+            "media_local_path": relative_media[0] if relative_media else "",
+            "media_paths": "|".join(relative_media),
+            "media_sha256": "|".join(digests),
+            "platform_poi_name": item.get("platform_poi_name", ""),
+            "platform_poi_address": item.get("platform_poi_address", ""),
+            "platform_lng": item.get("platform_lng", ""),
+            "platform_lat": item.get("platform_lat", ""),
+            "coordinate_system": item.get("coordinate_system", "unknown"),
             "visual_location": "",
             "visual_location_confidence": "unknown",
             "location_match_class": "unknown",

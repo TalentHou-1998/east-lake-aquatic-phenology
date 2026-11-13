@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "platforms": [
+    {"key": "xhs", "name": "小红书", "route": "mediacrawler", "media": true, "login": "qrcode", "status": "ready"},
+    {"key": "dy", "canonical_key": "douyin", "name": "抖音", "route": "mediacrawler", "media": true, "login": "qrcode", "status": "ready"},
+    {"key": "ks", "canonical_key": "kuaishou", "name": "快手", "route": "mediacrawler", "media": true, "login": "qrcode", "status": "ready"},
+    {"key": "wb", "canonical_key": "weibo", "name": "微博", "route": "mediacrawler", "media": true, "login": "qrcode", "status": "ready"},
+    {"key": "bili", "canonical_key": "bilibili", "name": "哔哩哔哩", "route": "mediacrawler", "media": true, "login": "qrcode", "status": "ready"},
+    {"key": "baidu", "name": "百度地图", "route": "map_album_import", "media": true, "login": "browser_session", "status": "ready"},
+    {"key": "amap", "name": "高德地图", "route": "map_review_import", "media": true, "login": "browser_session", "status": "ready"},
+    {"key": "dianping", "name": "大众点评", "route": "browser_manifest", "media": true, "login": "browser_session", "status": "experimental"},
+    {"key": "meituan", "name": "美团", "route": "browser_manifest", "media": true, "login": "browser_session", "status": "experimental"},
+    {"key": "2bulu", "name": "两步路", "route": "browser_manifest", "media": true, "login": "browser_session", "status": "experimental"},
+    {"key": "kesong", "name": "可颂", "route": "browser_manifest", "media": true, "login": "browser_session", "status": "experimental"}
+  ],
+  "generic_tools": [
+    {"name": "Playwright", "url": "https://github.com/microsoft/playwright", "purpose": "复用用户登录浏览器，采集页面可见文本、媒体链接与页面快照"},
+    {"name": "Crawlee", "url": "https://github.com/apify/crawlee", "purpose": "为允许自动翻页的平台提供限速队列、重试与数据集输出"},
+    {"name": "SingleFile", "url": "https://github.com/gildas-lormeau/SingleFile", "purpose": "人工核验时保存包含原始资源链接的完整页面证据"},
+    {"name": "Browsertrix Crawler", "url": "https://github.com/webrecorder/browsertrix-crawler", "purpose": "需要长期可复核时生成 WACZ/WARC 页面档案"}
+  ],
+  "guardrails": {
+    "comments": false,
+    "max_concurrency": 1,
+    "bypass_captcha": false,
+    "proxy_rotation": false,
+    "retain_author_identity": false,
+    "media_only_final_archive": true
+  }
+}

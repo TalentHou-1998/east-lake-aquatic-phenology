@@ -11,7 +11,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 
-SUPPORTED = ("xhs", "dy", "ks", "wb")
+SUPPORTED = ("xhs", "dy", "ks", "wb", "bili")
 
 
 def main() -> None:
@@ -63,14 +63,18 @@ def main() -> None:
     except KeyboardInterrupt:
         returncode = 130
     finally:
-        subprocess.run(
-            [
+        archive_root = project_root / ("media_candidates" if args.unit_id == "REGION01" else "media_collected")
+        organize_command = [
                 "python3", str(project_root / "src" / "organize_media_archive.py"),
                 "--run-root", str(run_root), "--platform", args.platform,
                 "--unit-id", args.unit_id, "--plan", str(project_root / args.plan),
-                "--archive-root", str(project_root / "media_collected"),
+                "--archive-root", str(archive_root),
                 "--crawl-time", now.isoformat(timespec="seconds"),
-            ],
+            ]
+        if args.unit_id == "REGION01":
+            organize_command.append("--allow-unanchored")
+        subprocess.run(
+            organize_command,
             cwd=project_root,
             check=True,
         )

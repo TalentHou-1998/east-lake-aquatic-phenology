@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0",
+  "platform": "dianping",
+  "query_keyword": "武汉 荷花",
+  "crawl_time": "2026-11-13T18:00:00+08:00",
+  "time_source": "platform",
+  "time_precision": "datetime",
+  "records": [
+    {
+      "post_id": "replace-with-platform-content-id",
+      "post_url": "https://example.invalid/post/1",
+      "content_text": "正文可以为空；系统还会读取图片或视频帧中的文字",
+      "publish_time": "2026-07-15T10:30:00+08:00",
+      "media_type": "image",
+      "media_urls": [
+        "https://example.invalid/media/1.jpg"
+      ],
+      "local_media_paths": [],
+      "platform_poi_name": "",
+      "platform_poi_address": "",
+      "platform_lng": "",
+      "platform_lat": "",
+      "coordinate_system": "unknown",
+      "relevance_level": "candidate",
+      "relevance_reason": "正文或画面疑似包含东湖地标"
+    }
+  ]
+}

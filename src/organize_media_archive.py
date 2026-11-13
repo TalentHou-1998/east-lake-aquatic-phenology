@@ -20,6 +20,7 @@ PLATFORM_SPEC = {
     "dy": {"id": "aweme_id", "time": "create_time", "url": "aweme_url", "store_dir": "douyin", "media_dir": "dy"},
     "ks": {"id": "video_id", "time": "create_time", "url": "video_url", "store_dir": "kuaishou", "media_dir": "ks"},
     "wb": {"id": "note_id", "time": "create_time", "url": "note_url", "store_dir": "weibo", "media_dir": "wb"},
+    "bili": {"id": "video_id", "time": "create_time", "url": "video_url", "store_dir": "bilibili", "media_dir": "bili"},
 }
 MEDIA_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".mp4", ".mov", ".m4v", ".webm"}
 FIELDS = [

@@ -21,9 +21,15 @@ import shutil
 PLATFORM_NAMES = {
     "amap": "高德地图",
     "baidu": "百度地图",
+    "bili": "哔哩哔哩",
+    "bilibili": "哔哩哔哩",
+    "dianping": "大众点评",
     "douyin": "抖音",
     "dy": "抖音",
     "kuaishou": "快手",
+    "meituan": "美团",
+    "2bulu": "两步路",
+    "kesong": "可颂",
     "ks": "快手",
     "weibo": "微博",
     "wb": "微博",
@@ -33,9 +39,15 @@ PLATFORM_NAMES = {
 PLATFORM_KEYS = {
     "amap": "amap",
     "baidu": "baidu",
+    "bili": "bilibili",
+    "bilibili": "bilibili",
+    "dianping": "dianping",
     "douyin": "douyin",
     "dy": "douyin",
     "kuaishou": "kuaishou",
+    "meituan": "meituan",
+    "2bulu": "2bulu",
+    "kesong": "kesong",
     "ks": "kuaishou",
     "weibo": "weibo",
     "wb": "weibo",
@@ -145,9 +157,13 @@ def load_hierarchy(path: Path) -> tuple[dict[str, str], list[tuple[str, str]]]:
 def choose_poi(
     row: dict[str, str],
     processed: dict[str, str] | None,
+    location_evidence: dict[str, str] | None,
     hierarchy: dict[str, str],
     aliases: list[tuple[str, str]],
 ) -> str:
+    evidence_poi = (location_evidence or {}).get("matched_broad_poi", "").strip()
+    if evidence_poi:
+        return evidence_poi
     mapped = hierarchy.get(row.get("unit_id", ""))
     if mapped:
         return mapped
@@ -197,6 +213,7 @@ def main() -> None:
     parser.add_argument("--source-root", type=Path, default=Path("media_collected"))
     parser.add_argument("--output-root", type=Path, default=Path("media_by_landmark_year"))
     parser.add_argument("--processed", type=Path, default=Path("data/processed/all_posts.csv"))
+    parser.add_argument("--evidence", type=Path, default=Path("data/processed/location_evidence.csv"))
     parser.add_argument("--hierarchy", type=Path, default=Path("config/east_lake_poi_hierarchy.csv"))
     args = parser.parse_args()
 
@@ -204,10 +221,14 @@ def main() -> None:
     source_root = args.source_root if args.source_root.is_absolute() else project_root / args.source_root
     output_root = args.output_root if args.output_root.is_absolute() else project_root / args.output_root
     processed_path = args.processed if args.processed.is_absolute() else project_root / args.processed
+    evidence_path = args.evidence if args.evidence.is_absolute() else project_root / args.evidence
     hierarchy_path = args.hierarchy if args.hierarchy.is_absolute() else project_root / args.hierarchy
     output_root.mkdir(parents=True, exist_ok=True)
 
     by_id, by_url = processed_lookups(processed_path)
+    evidence_by_id = {
+        row["record_id"]: row for row in read_csv(evidence_path)
+    } if evidence_path.exists() else {}
     hierarchy, hierarchy_aliases = load_hierarchy(hierarchy_path)
     source_rows: list[dict[str, str]] = []
     for manifest in sorted(source_root.rglob("media_manifest.csv")):
@@ -219,7 +240,8 @@ def main() -> None:
         if not source.is_file():
             raise FileNotFoundError(source)
         processed = by_id.get(row.get("content_id", "")) or by_url.get(row.get("source_url", ""))
-        poi = safe_name(choose_poi(row, processed, hierarchy, hierarchy_aliases))
+        location_evidence = evidence_by_id.get((processed or {}).get("record_id", ""))
+        poi = safe_name(choose_poi(row, processed, location_evidence, hierarchy, hierarchy_aliases))
         prepared.append(
             {
                 **row,

@@ -219,7 +219,7 @@ def main() -> None:
             "media_type": "image" if good else "video_link" if has_video else "none",
             "media_local_path": primary,
             "media_sha256": primary_hash,
-            "platform_poi_name": location or "东湖（正文提及，未提供平台定位）",
+            "platform_poi_name": location,
             "platform_poi_address": "",
             "platform_lng": "",
             "platform_lat": "",

@@ -120,8 +120,12 @@ def media_sources(project_root: Path, row: dict[str, str]) -> list[Path]:
     primary = project_root / local_path
     if not primary.exists():
         return []
-    siblings = sorted(path for path in primary.parent.iterdir() if path.is_file())
-    return siblings if row["platform"] in {"amap", "weibo", "baidu"} else [primary]
+    return sorted(
+        path for path in primary.parent.iterdir()
+        if path.is_file() and path.suffix.lower() in {
+            ".jpg", ".jpeg", ".png", ".webp", ".gif", ".mp4", ".mov", ".m4v", ".webm"
+        }
+    )
 
 
 def hierarchy_aliases(path: Path) -> tuple[set[str], list[tuple[str, str]]]:
@@ -145,7 +149,7 @@ def broad_poi(row: dict[str, str], broad_names: set[str], aliases: list[tuple[st
     if original in broad_names:
         return original
     evidence = " ".join(
-        [original, row.get("platform_poi_address", ""), row.get("query_keyword", ""), row.get("visual_location", "")]
+        [original, row.get("platform_poi_address", ""), row.get("visual_location", "")]
     )
     scores: dict[str, int] = {}
     for alias, broad in aliases:
@@ -232,11 +236,19 @@ def main() -> None:
             rows = list(csv.DictReader(handle))
         for row in rows:
             combined_rows[row["record_id"]] = row
+    evidence_path = data_dir / "location_evidence.csv"
+    evidence_by_id = {}
+    if evidence_path.exists():
+        with evidence_path.open(encoding="utf-8-sig", newline="") as handle:
+            evidence_by_id = {row["record_id"]: row for row in csv.DictReader(handle)}
 
     points: list[dict] = []
     for row in combined_rows.values():
         platform = row.get("platform", "unknown") or "unknown"
-        broad_name = broad_poi(row, broad_names, broad_aliases)
+        evidence = evidence_by_id.get(row["record_id"], {})
+        broad_name = evidence.get("matched_broad_poi", "").strip() or broad_poi(
+            row, broad_names, broad_aliases
+        )
         if row.get("platform_lng") and row.get("platform_lat"):
             gcj_lng = float(row["platform_lng"])
             gcj_lat = float(row["platform_lat"])
@@ -244,6 +256,8 @@ def main() -> None:
         else:
             coordinate_row = {**row, "platform_poi_name": broad_name}
             gcj_lng, gcj_lat, coordinate_precision = fallback_coordinate(coordinate_row)
+            if evidence.get("location_evidence_sources"):
+                coordinate_precision = "evidence_estimated"
         wgs_lng, wgs_lat = gcj02_to_wgs84(gcj_lng, gcj_lat)
 
         media: list[str] = []
@@ -253,6 +267,9 @@ def main() -> None:
             media.append(target.relative_to(args.site_dist).as_posix())
 
         publish_time = row.get("publish_time", "").strip()
+        displayed_poi = row["platform_poi_name"] or "未提供"
+        if "正文提及" in displayed_poi or "未提供平台定位" in displayed_poi:
+            displayed_poi = "未提供"
         point = {
             "id": row["record_id"],
             "platform": platform,
@@ -265,7 +282,7 @@ def main() -> None:
             "media": media or ["assets/no-media.svg"],
             "mediaType": row["media_type"],
             "broadPoi": broad_name,
-            "poiName": row["platform_poi_name"] or "未提供",
+            "poiName": displayed_poi,
             "poiAddress": row["platform_poi_address"] or "未提供",
             "originalLng": row["platform_lng"] or None,
             "originalLat": row["platform_lat"] or None,
@@ -283,6 +300,13 @@ def main() -> None:
             "mediaValue": row.get("media_value", "unknown") or "unknown",
             "reviewStatus": row["review_status"],
             "notes": row["notes"],
+            "locationEvidenceSources": evidence.get("location_evidence_sources", ""),
+            "locationEvidenceScore": evidence.get("location_evidence_score", ""),
+            "locationEvidenceLevel": evidence.get("location_evidence_level", "none"),
+            "locationDecision": evidence.get("location_decision", "needs_review"),
+            "locationDecisionReason": evidence.get("location_decision_reason", ""),
+            "matchedAliases": evidence.get("matched_aliases", ""),
+            "ocrText": evidence.get("ocr_text", ""),
         }
         points.append(point)
 
