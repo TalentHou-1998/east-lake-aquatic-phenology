@@ -120,8 +120,12 @@ def media_sources(project_root: Path, row: dict[str, str]) -> list[Path]:
     primary = project_root / local_path
     if not primary.exists():
         return []
+    # A file-valued legacy path identifies one media item. Enumerating its parent
+    # can attach every other post in a shared platform directory to this record.
+    if primary.is_file():
+        return [primary]
     return sorted(
-        path for path in primary.parent.iterdir()
+        path for path in primary.iterdir()
         if path.is_file() and path.suffix.lower() in {
             ".jpg", ".jpeg", ".png", ".webp", ".gif", ".mp4", ".mov", ".m4v", ".webm"
         }
