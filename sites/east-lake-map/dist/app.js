@@ -96,7 +96,7 @@ function applyFilters() {
   const f = filters();
   state.filtered = state.points.filter(point => {
     const a = annotation(point);
-    const haystack = `${point.poiName} ${point.poiAddress} ${point.text} ${point.vegetationType} ${point.visualLocation}`.toLowerCase();
+    const haystack = `${point.broadPoi || ''} ${point.poiName} ${point.poiAddress} ${point.text} ${point.vegetationType} ${point.visualLocation}`.toLowerCase();
     const timeMatches = point.year === null ? f.includeUnknownTime : point.year >= f.start && point.year <= f.end;
     return f.platforms.has(point.platform) && timeMatches &&
       (!f.observedOnly || point.coordinatePrecision === 'platform_observed_unknown_crs') &&
@@ -119,7 +119,7 @@ function renderResultList() {
     const a = annotation(point);
     return `
     <button class="result-item" data-id="${point.id}" type="button">
-      <strong>${escapeHtml(point.poiName)}</strong>
+      <strong>${escapeHtml(point.broadPoi || point.poiName)}</strong>
       <span>${labels.platforms[point.platform]?.short || point.platform} · ${escapeHtml(point.timeKnown ? point.publishTime.slice(0,10) : '时间未知')} · ${labels.stages[a.stage] || a.stage}</span>
     </button>`;
   }).join('') + (state.filtered.length > 50 ? `<div class="result-more">地图中另有 ${state.filtered.length - 50} 条</div>` : '');
@@ -145,7 +145,7 @@ function openDetail(point) {
   const a = annotation(point);
   setText('detailDate', point.timeKnown ? point.publishTime.slice(0, 10) : '时间未知');
   setText('detailPrecision', point.coordinatePrecision === 'platform_observed_unknown_crs' ? '平台坐标' : '估计坐标');
-  setText('detailTitle', point.poiName);
+  setText('detailTitle', point.broadPoi || point.poiName);
   setText('detailAddress', point.poiAddress);
   setText('platformLocation', point.poiName);
   setText('platformAddress', point.poiAddress);
@@ -157,7 +157,7 @@ function openDetail(point) {
   setText('preMatch', labels.matches[a.match] || a.match);
   setText('detailText', point.text);
   document.getElementById('sourceLink').href = point.postUrl;
-  document.getElementById('baiduLink').href = `https://api.map.baidu.com/marker?location=${point.lat},${point.lng}&title=${encodeURIComponent(point.poiName)}&content=${encodeURIComponent(point.poiAddress)}&output=html&src=east-lake-media-map`;
+  document.getElementById('baiduLink').href = `https://api.map.baidu.com/marker?location=${point.lat},${point.lng}&title=${encodeURIComponent(point.broadPoi || point.poiName)}&content=${encodeURIComponent(point.poiAddress)}&output=html&src=east-lake-media-map`;
   renderMedia(); loadJudgment();
 }
 
@@ -198,7 +198,7 @@ function saveJudgment() {
     mediaValue: valueButton?.dataset.value || 'unknown',
     note: document.getElementById('reviewNote').value.trim(),
     savedAt: new Date().toISOString(), platform: state.active.platform,
-    poiName: state.active.poiName, publishTime: state.active.publishTime
+    poiName: state.active.broadPoi || state.active.poiName, publishTime: state.active.publishTime
   };
   localStorage.setItem('eastLakeJudgments', JSON.stringify(state.userJudgments));
   loadJudgment();
@@ -224,7 +224,7 @@ async function boot() {
     setText('totalMetric', summary.total); setText('observedMetric', summary.platformObservedCoordinates); setText('screenedMetric', summary.preannotated); updateHiddenMetric();
     initFilters(summary);
     points.forEach(point => {
-      const marker = L.marker([point.lat, point.lng], { icon: markerIcon(point), title: `${point.poiName} · ${point.publishTime.slice(0,10)}` });
+      const marker = L.marker([point.lat, point.lng], { icon: markerIcon(point), title: `${point.broadPoi || point.poiName} · ${point.publishTime.slice(0,10)}` });
       marker.on('click', () => openDetail(point)); state.markers.set(point.id, marker);
     });
     applyFilters();

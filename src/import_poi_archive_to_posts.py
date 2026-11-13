@@ -15,7 +15,7 @@ STANDARD_FIELDS = [
     "platform_poi_name", "platform_poi_address", "platform_lng", "platform_lat",
     "coordinate_system", "visual_location", "visual_location_confidence",
     "location_match_class", "vegetation_type", "growth_stage", "cover_grade",
-    "phenology_confidence", "media_value", "review_status", "notes", "media_paths",
+    "phenology_confidence", "media_value", "review_status", "notes", "media_paths", "archive_poi",
 ]
 
 
@@ -27,7 +27,7 @@ def read_csv(path: Path) -> list[dict[str, str]]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project-root", type=Path, default=Path.cwd())
-    parser.add_argument("--archive-index", type=Path, default=Path("media_by_poi/_归档索引.csv"))
+    parser.add_argument("--archive-index", type=Path, default=Path("media_by_landmark_year/_归档索引.csv"))
     parser.add_argument("--existing", type=Path, default=Path("data/processed/all_posts.csv"))
     parser.add_argument("--output", type=Path, default=Path("data/processed/archive_posts.csv"))
     args = parser.parse_args()
@@ -81,6 +81,7 @@ def main() -> None:
                 "review_status": (matched or {}).get("review_status", "") or "candidate_unverified",
                 "notes": (matched or {}).get("notes", "") or "archive_media_only; text_not_collected; location_requires_manual_verification",
                 "media_paths": "|".join(paths),
+                "archive_poi": poi,
             }
         )
         output.append(row)

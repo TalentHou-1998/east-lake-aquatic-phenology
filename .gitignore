@@ -24,6 +24,7 @@ media/
 media_collected/
 media_quarantine/
 media_by_poi/
+media_by_landmark_year/
 output/
 reports/contact_sheets/
 

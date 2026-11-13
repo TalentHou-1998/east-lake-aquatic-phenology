@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build bounded, place-specific media search jobs for East Lake."""
+"""Build broad-landmark media search jobs for East Lake."""
 
 from __future__ import annotations
 
@@ -25,26 +25,20 @@ def unique(values: list[str]) -> list[str]:
     return result
 
 
-def build_keywords(unit: dict[str, str], terms: dict, limit: int) -> list[str]:
-    aliases = [item.strip() for item in unit["aliases"].split("|") if item.strip()]
-    primary = aliases[0]
+def build_keywords(poi: dict[str, str], terms: dict, limit: int) -> list[str]:
+    anchors = [item.strip() for item in poi["search_anchors"].split("|") if item.strip()]
     candidates: list[str] = []
 
-    # Every POI alias gets several high-yield vegetation terms.
-    def anchored(alias: str) -> str:
-        return alias if "武汉" in alias else f"武汉 {alias}"
+    # Keep the geographic anchor recognizable, but loosen the thematic side.
+    candidates.extend(anchors)
+    for term in terms["loose_search_terms"]:
+        for anchor in anchors:
+            candidates.append(f"{anchor} {term}")
 
-    for alias in aliases:
-        for term in ("荷花", "荷叶", "残荷", "水草", "浮萍", "湿地"):
-            candidates.append(f"{anchored(alias)} {term}")
-
-    # The primary place name gets the richer phenology and disturbance matrix.
+    # Retain a small phenology-focused tail for seasonal evidence.
+    primary = anchors[0]
     for plant, phase in terms["preferred_pair_templates"]:
-        candidates.append(f"{anchored(primary)} {plant} {phase}")
-    for term in terms["core_plants"]:
-        candidates.append(f"{anchored(primary)} {term}")
-    for term in terms["observation_context"] + terms["management_events"]:
-        candidates.append(f"{anchored(primary)} {term}")
+        candidates.append(f"{primary} {plant} {phase}")
 
     return unique(candidates)[:limit]
 
@@ -52,37 +46,48 @@ def build_keywords(unit: dict[str, str], terms: dict, limit: int) -> list[str]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--units", type=Path, default=Path("config/east_lake_spatial_units.csv"))
+    parser.add_argument("--hierarchy", type=Path, default=Path("config/east_lake_poi_hierarchy.csv"))
     parser.add_argument("--terms", type=Path, default=Path("config/aquatic_media_terms.json"))
     parser.add_argument("--output", type=Path, default=Path("data/interim/media_collection_plan.json"))
-    parser.add_argument("--max-keywords-per-unit", type=int, default=60)
+    parser.add_argument("--max-keywords-per-unit", type=int, default=48)
     args = parser.parse_args()
 
     with args.units.open(encoding="utf-8-sig", newline="") as handle:
         units = list(csv.DictReader(handle))
+    with args.hierarchy.open(encoding="utf-8-sig", newline="") as handle:
+        broad_pois = list(csv.DictReader(handle))
     terms = json.loads(args.terms.read_text(encoding="utf-8"))
 
+    units_by_id = {unit["unit_id"]: unit for unit in units}
+
     jobs = []
-    for unit in units:
-        keywords = build_keywords(unit, terms, args.max_keywords_per_unit)
+    for poi in broad_pois:
+        source_unit_ids = [item for item in poi["source_unit_ids"].split("|") if item]
+        source_units = [units_by_id[unit_id] for unit_id in source_unit_ids]
+        keywords = build_keywords(poi, terms, args.max_keywords_per_unit)
         jobs.append(
             {
-                "unit_id": unit["unit_id"],
-                "region": unit["region"],
-                "place": unit["place"],
-                "aliases": unit["aliases"].split("|"),
-                "priority": int(unit["priority"]),
-                "image_refs": [int(value) for value in unit["image_refs"].split("|") if value],
-                "scope_note": unit["scope_note"],
+                "unit_id": poi["broad_poi_id"],
+                "broad_poi_id": poi["broad_poi_id"],
+                "region": source_units[0]["region"],
+                "place": poi["broad_poi"],
+                "source_unit_ids": source_unit_ids,
+                "search_anchors": poi["search_anchors"].split("|"),
+                "aliases": poi["match_aliases"].split("|"),
+                "priority": min(int(unit["priority"]) for unit in source_units),
+                "image_refs": sorted({int(value) for unit in source_units for value in unit["image_refs"].split("|") if value}),
+                "scope_note": poi["scope_note"],
                 "keywords": keywords,
                 "platforms": list(PLATFORMS),
             }
         )
 
     payload = {
-        "schema_version": "1.0",
+        "schema_version": "2.0",
         "generated_at": datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(timespec="seconds"),
         "research_period": {"start": "2018-01-01", "end": "2026-10-30"},
         "policy": {
+            "poi_level": "broad_landmark",
             "media_only_final_archive": True,
             "comments": False,
             "max_concurrency": 1,

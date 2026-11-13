@@ -50,6 +50,8 @@ INDEX_FIELDS = [
     "platform_name",
     "region",
     "poi",
+    "year_folder",
+    "source_place",
     "unit_id",
     "content_id",
     "media_index",
@@ -126,11 +128,53 @@ def processed_lookups(path: Path) -> tuple[dict[str, dict[str, str]], dict[str, 
     return by_id, by_url
 
 
-def choose_poi(row: dict[str, str], processed: dict[str, str] | None) -> str:
-    candidate = (processed or {}).get("platform_poi_name", "").strip()
-    if candidate and not any(term in candidate for term in ("未提供", "正文提及", "待核验")):
-        return candidate
-    return row.get("place", "").strip() or candidate or "地点待核验"
+def load_hierarchy(path: Path) -> tuple[dict[str, str], list[tuple[str, str]]]:
+    mapping: dict[str, str] = {}
+    aliases: list[tuple[str, str]] = []
+    for row in read_csv(path):
+        mapping[row["broad_poi_id"]] = row["broad_poi"]
+        for unit_id in row["source_unit_ids"].split("|"):
+            if unit_id:
+                mapping[unit_id] = row["broad_poi"]
+        for alias in [row["broad_poi"], *row["search_anchors"].split("|"), *row["match_aliases"].split("|")]:
+            if alias:
+                aliases.append((alias, row["broad_poi"]))
+    return mapping, sorted(set(aliases), key=lambda item: len(item[0]), reverse=True)
+
+
+def choose_poi(
+    row: dict[str, str],
+    processed: dict[str, str] | None,
+    hierarchy: dict[str, str],
+    aliases: list[tuple[str, str]],
+) -> str:
+    mapped = hierarchy.get(row.get("unit_id", ""))
+    if mapped:
+        return mapped
+    evidence = " ".join(
+        [
+            row.get("place", ""),
+            row.get("source_keyword", ""),
+            (processed or {}).get("platform_poi_name", ""),
+            (processed or {}).get("platform_poi_address", ""),
+            (processed or {}).get("query_keyword", ""),
+        ]
+    )
+    scores: dict[str, int] = {}
+    for alias, broad_poi in aliases:
+        if alias in evidence:
+            scores[broad_poi] = max(scores.get(broad_poi, 0), len(alias))
+    if scores:
+        best = max(scores.values())
+        winners = [poi for poi, score in scores.items() if score == best]
+        if len(winners) == 1:
+            return winners[0]
+    return "东湖风景区（综合）"
+
+
+def year_folder(value: str) -> str:
+    match = re.match(r"^(20\d{2})", (value or "").strip())
+    return match.group(1) if match else "年份未知"
 
 
 def hardlink_or_copy(source: Path, target: Path) -> str:
@@ -151,17 +195,20 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project-root", type=Path, default=Path.cwd())
     parser.add_argument("--source-root", type=Path, default=Path("media_collected"))
-    parser.add_argument("--output-root", type=Path, default=Path("media_by_poi"))
+    parser.add_argument("--output-root", type=Path, default=Path("media_by_landmark_year"))
     parser.add_argument("--processed", type=Path, default=Path("data/processed/all_posts.csv"))
+    parser.add_argument("--hierarchy", type=Path, default=Path("config/east_lake_poi_hierarchy.csv"))
     args = parser.parse_args()
 
     project_root = args.project_root.resolve()
     source_root = args.source_root if args.source_root.is_absolute() else project_root / args.source_root
     output_root = args.output_root if args.output_root.is_absolute() else project_root / args.output_root
     processed_path = args.processed if args.processed.is_absolute() else project_root / args.processed
+    hierarchy_path = args.hierarchy if args.hierarchy.is_absolute() else project_root / args.hierarchy
     output_root.mkdir(parents=True, exist_ok=True)
 
     by_id, by_url = processed_lookups(processed_path)
+    hierarchy, hierarchy_aliases = load_hierarchy(hierarchy_path)
     source_rows: list[dict[str, str]] = []
     for manifest in sorted(source_root.rglob("media_manifest.csv")):
         source_rows.extend(read_csv(manifest))
@@ -172,7 +219,7 @@ def main() -> None:
         if not source.is_file():
             raise FileNotFoundError(source)
         processed = by_id.get(row.get("content_id", "")) or by_url.get(row.get("source_url", ""))
-        poi = safe_name(choose_poi(row, processed))
+        poi = safe_name(choose_poi(row, processed, hierarchy, hierarchy_aliases))
         prepared.append(
             {
                 **row,
@@ -181,12 +228,15 @@ def main() -> None:
                 "platform": PLATFORM_KEYS.get(row.get("platform", ""), row.get("platform", "unknown")),
                 "platform_name": PLATFORM_NAMES.get(row.get("platform", ""), row.get("platform", "未知平台")),
                 "_stamp": publish_stamp(row.get("publish_time", "")),
+                "year_folder": year_folder(row.get("publish_time", "")),
+                "source_place": row.get("place", ""),
             }
         )
 
     prepared.sort(
         key=lambda row: (
             row["poi"],
+            row["year_folder"],
             row["publish_time"] or "9999",
             row["platform_name"],
             row.get("content_id", ""),
@@ -195,35 +245,43 @@ def main() -> None:
         )
     )
 
-    counters: dict[str, int] = {}
+    counters: dict[tuple[str, str], int] = {}
     index_rows: list[dict[str, str]] = []
     methods: dict[str, int] = {"hardlink": 0, "copy": 0, "existing": 0}
     for row in prepared:
         poi = row["poi"]
-        counters[poi] = counters.get(poi, 0) + 1
-        sequence = counters[poi]
+        year = row["year_folder"]
+        counter_key = (poi, year)
+        counters[counter_key] = counters.get(counter_key, 0) + 1
+        sequence = counters[counter_key]
         if sequence > 999:
             raise RuntimeError(f"POI {poi!r} exceeds the requested 001-999 sequence range")
         source = Path(row["_source"])
         filename = f"{poi}-{row['_stamp']}-{row['platform_name']}-{sequence:03d}{normalized_extension(source)}"
-        target = output_root / poi / filename
+        target = output_root / poi / year / filename
         methods[hardlink_or_copy(source, target)] += 1
         new_path = target.relative_to(project_root).as_posix()
         indexed = {field: row.get(field, "") for field in INDEX_FIELDS}
         indexed["new_archive_path"] = new_path
         indexed["original_archive_path"] = row.get("archive_path", "")
         indexed["poi"] = poi
+        indexed["year_folder"] = year
+        indexed["source_place"] = row.get("place", "")
         indexed["platform"] = row["platform"]
         indexed["platform_name"] = row["platform_name"]
         index_rows.append(indexed)
 
     write_csv(output_root / "_归档索引.csv", index_rows, INDEX_FIELDS)
-    for poi in sorted(counters):
-        write_csv(output_root / poi / "媒体索引.csv", [row for row in index_rows if row["poi"] == poi], INDEX_FIELDS)
+    for poi, year in sorted(counters):
+        write_csv(
+            output_root / poi / year / "媒体索引.csv",
+            [row for row in index_rows if row["poi"] == poi and row["year_folder"] == year],
+            INDEX_FIELDS,
+        )
 
     digest = hashlib.sha256((output_root / "_归档索引.csv").read_bytes()).hexdigest()
     print(
-        f"media={len(index_rows)} poi_folders={len(counters)} hardlinks={methods['hardlink']} "
+        f"media={len(index_rows)} broad_pois={len({poi for poi, _ in counters})} year_folders={len(counters)} hardlinks={methods['hardlink']} "
         f"copies={methods['copy']} existing={methods['existing']} index_sha256={digest}"
     )
 

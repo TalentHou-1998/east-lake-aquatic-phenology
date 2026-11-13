@@ -25,6 +25,14 @@ POI_COORDS_GCJ02 = {
     "落雁景区": (114.470750, 30.561878),
     "东湖荷园": (114.407612, 30.551031),
     "东湖绿道": (114.405107, 30.576904),
+    "东湖风景区（综合）": (114.408432, 30.551802),
+    "东湖华侨城—欢乐谷片区": (114.395000, 30.615000),
+    "东湖白马景区": (114.419581, 30.600659),
+    "东湖落雁景区": (114.430750, 30.561878),
+    "东湖南岸—武汉水生所": (114.431000, 30.514000),
+    "马鞍山森林公园": (114.472000, 30.515000),
+    "武汉植物园": (114.421000, 30.536000),
+    "东湖绿道湖中道": (114.390500, 30.558000),
     "楚风园—梨园": (114.373166, 30.579660),
     "筲箕湖—华侨城岸段": (114.388900, 30.607200),
     "汤菱湖—欢乐谷岸段": (114.401000, 30.624000),
@@ -116,6 +124,41 @@ def media_sources(project_root: Path, row: dict[str, str]) -> list[Path]:
     return siblings if row["platform"] in {"amap", "weibo", "baidu"} else [primary]
 
 
+def hierarchy_aliases(path: Path) -> tuple[set[str], list[tuple[str, str]]]:
+    broad_names: set[str] = set()
+    aliases: set[tuple[str, str]] = set()
+    with path.open(encoding="utf-8-sig", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    for row in rows:
+        broad = row["broad_poi"]
+        broad_names.add(broad)
+        values = [broad, *row["search_anchors"].split("|"), *row["match_aliases"].split("|")]
+        aliases.update((value, broad) for value in values if value)
+    return broad_names, sorted(aliases, key=lambda item: len(item[0]), reverse=True)
+
+
+def broad_poi(row: dict[str, str], broad_names: set[str], aliases: list[tuple[str, str]]) -> str:
+    archived = row.get("archive_poi", "").strip()
+    if archived:
+        return archived
+    original = row.get("platform_poi_name", "").strip()
+    if original in broad_names:
+        return original
+    evidence = " ".join(
+        [original, row.get("platform_poi_address", ""), row.get("query_keyword", ""), row.get("visual_location", "")]
+    )
+    scores: dict[str, int] = {}
+    for alias, broad in aliases:
+        if alias in evidence:
+            scores[broad] = max(scores.get(broad, 0), len(alias))
+    if scores:
+        best = max(scores.values())
+        winners = [poi for poi, score in scores.items() if score == best]
+        if len(winners) == 1:
+            return winners[0]
+    return "东湖风景区（综合）"
+
+
 def compress_image(source: Path, target: Path) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists() and target.stat().st_mtime >= source.stat().st_mtime:
@@ -173,6 +216,7 @@ def main() -> None:
     args = parser.parse_args()
 
     data_dir = args.project_root / "data" / "processed"
+    broad_names, broad_aliases = hierarchy_aliases(args.project_root / "config" / "east_lake_poi_hierarchy.csv")
     output_data = args.site_dist / "data"
     output_media = args.site_dist / "assets" / "media"
     output_data.mkdir(parents=True, exist_ok=True)
@@ -191,53 +235,56 @@ def main() -> None:
 
     points: list[dict] = []
     for row in combined_rows.values():
-            platform = row.get("platform", "unknown") or "unknown"
-            if row.get("platform_lng") and row.get("platform_lat"):
-                gcj_lng = float(row["platform_lng"])
-                gcj_lat = float(row["platform_lat"])
-                coordinate_precision = "platform_observed_unknown_crs"
-            else:
-                gcj_lng, gcj_lat, coordinate_precision = fallback_coordinate(row)
-            wgs_lng, wgs_lat = gcj02_to_wgs84(gcj_lng, gcj_lat)
+        platform = row.get("platform", "unknown") or "unknown"
+        broad_name = broad_poi(row, broad_names, broad_aliases)
+        if row.get("platform_lng") and row.get("platform_lat"):
+            gcj_lng = float(row["platform_lng"])
+            gcj_lat = float(row["platform_lat"])
+            coordinate_precision = "platform_observed_unknown_crs"
+        else:
+            coordinate_row = {**row, "platform_poi_name": broad_name}
+            gcj_lng, gcj_lat, coordinate_precision = fallback_coordinate(coordinate_row)
+        wgs_lng, wgs_lat = gcj02_to_wgs84(gcj_lng, gcj_lat)
 
-            media: list[str] = []
-            for index, source in enumerate(media_sources(args.project_root, row), start=1):
-                target = output_media / platform / row["record_id"] / f"{index:02d}.webp"
-                export_media(source, target)
-                media.append(target.relative_to(args.site_dist).as_posix())
+        media: list[str] = []
+        for index, source in enumerate(media_sources(args.project_root, row), start=1):
+            target = output_media / platform / row["record_id"] / f"{index:02d}.webp"
+            export_media(source, target)
+            media.append(target.relative_to(args.site_dist).as_posix())
 
-            publish_time = row.get("publish_time", "").strip()
-            point = {
-                "id": row["record_id"],
-                "platform": platform,
-                "queryKeyword": row["query_keyword"],
-                "postUrl": row["post_url"],
-                "text": row["content_text"],
-                "publishTime": publish_time or "平台未提供",
-                "year": int(publish_time[:4]) if re.match(r"^20\d{2}", publish_time) else None,
-                "timeKnown": bool(publish_time),
-                "media": media or ["assets/no-media.svg"],
-                "mediaType": row["media_type"],
-                "poiName": row["platform_poi_name"] or "未提供",
-                "poiAddress": row["platform_poi_address"] or "未提供",
-                "originalLng": row["platform_lng"] or None,
-                "originalLat": row["platform_lat"] or None,
-                "coordinatePrecision": coordinate_precision,
-                "coordinateAssumption": "GCJ-02 assumed; converted to WGS84 for Baidu CRS rendering",
-                "lng": round(wgs_lng, 7),
-                "lat": round(wgs_lat, 7),
-                "visualLocation": row["visual_location"] or "尚未判断",
-                "visualLocationConfidence": row["visual_location_confidence"],
-                "locationMatchClass": row["location_match_class"],
-                "vegetationType": row["vegetation_type"] or "未识别",
-                "growthStage": row["growth_stage"],
-                "coverGrade": row["cover_grade"],
-                "phenologyConfidence": row["phenology_confidence"],
-                "mediaValue": row.get("media_value", "unknown") or "unknown",
-                "reviewStatus": row["review_status"],
-                "notes": row["notes"],
-            }
-            points.append(point)
+        publish_time = row.get("publish_time", "").strip()
+        point = {
+            "id": row["record_id"],
+            "platform": platform,
+            "queryKeyword": row["query_keyword"],
+            "postUrl": row["post_url"],
+            "text": row["content_text"],
+            "publishTime": publish_time or "平台未提供",
+            "year": int(publish_time[:4]) if re.match(r"^20\d{2}", publish_time) else None,
+            "timeKnown": bool(publish_time),
+            "media": media or ["assets/no-media.svg"],
+            "mediaType": row["media_type"],
+            "broadPoi": broad_name,
+            "poiName": row["platform_poi_name"] or "未提供",
+            "poiAddress": row["platform_poi_address"] or "未提供",
+            "originalLng": row["platform_lng"] or None,
+            "originalLat": row["platform_lat"] or None,
+            "coordinatePrecision": coordinate_precision,
+            "coordinateAssumption": "GCJ-02 assumed; converted to WGS84 for Baidu CRS rendering",
+            "lng": round(wgs_lng, 7),
+            "lat": round(wgs_lat, 7),
+            "visualLocation": row["visual_location"] or "尚未判断",
+            "visualLocationConfidence": row["visual_location_confidence"],
+            "locationMatchClass": row["location_match_class"],
+            "vegetationType": row["vegetation_type"] or "未识别",
+            "growthStage": row["growth_stage"],
+            "coverGrade": row["cover_grade"],
+            "phenologyConfidence": row["phenology_confidence"],
+            "mediaValue": row.get("media_value", "unknown") or "unknown",
+            "reviewStatus": row["review_status"],
+            "notes": row["notes"],
+        }
+        points.append(point)
 
     (output_data / "points.json").write_text(
         json.dumps(points, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
